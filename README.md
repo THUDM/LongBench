@@ -7,7 +7,7 @@
 
 # LongBench: A Multilingual, Multitask Benchmark Tailored for Long Context Understanding
 
-**LongBench** is the first comprehensive dataset for multilingual, multitask, and comprehensive assessment of **long context understanding** capabilities of large language models. LongBench includes different languages (Chinese and English) to provide a more comprehensive evaluation of the large models' multilingual capabilities on long contexts. In addition, LongBench consists of 20 different tasks, covering key long context application scenarios such as single-document QA, multi-document QA, summarization, few-shot learning, code completion, and synthetic tasks.
+**LongBench** is the first benchmark for multilingual, multitask, and comprehensive assessment of **long context understanding** capabilities of large language models. LongBench includes different languages (Chinese and English) to provide a more comprehensive evaluation of the large models' multilingual capabilities on long contexts. In addition, LongBench consists of 20 different tasks, covering key long context application scenarios such as single-document QA, multi-document QA, summarization, few-shot learning, code completion, and synthetic tasks.
 
 We are fully aware of the potentially high costs involved in the model evaluation process, especially in the context of long context scenarios (such as manual annotation costs or API call costs). Therefore, we adopt a fully automated evaluation method, aimed at measuring and evaluating the model's ability to understand long contexts at the lowest cost.
 
@@ -67,7 +67,7 @@ To more specifically analyze the models' relative performance under different co
 
 ## How to evaluate on LongBench
 
-#### Loading Data
+#### Load Data
 You can download and load the **LongBench** data through the Hugging Face datasets ([🤗 HF Repo](https://huggingface.co/datasets/THUDM/LongBench)):
 ```python
 from datasets import load_dataset
