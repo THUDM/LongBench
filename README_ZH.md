@@ -177,6 +177,6 @@ python eval.py
 - **LongBench**的部分任务基于之前的研究者提出的数据集构建，包括[HotpotQA](https://hotpotqa.github.io/)，[2WikiMultihopQA](https://aclanthology.org/2020.coling-main.580/)，[Musique](https://arxiv.org/abs/2108.00573)，[DuReader](https://github.com/baidu/DuReader)，[NarrativeQA](https://arxiv.org/pdf/1712.07040.pdf)，[Qasper](https://arxiv.org/pdf/2105.03011.pdf)，[GovReport](https://arxiv.org/pdf/2104.02112.pdf)，[QMSum](https://arxiv.org/pdf/2104.05938.pdf)，[VCSUM](https://arxiv.org/abs/2305.05280)，[TriviaQA](https://nlp.cs.washington.edu/triviaqa/)，[NQ](https://ai.google.com/research/NaturalQuestions/)，[TREC](https://aclanthology.org/C02-1150.pdf)，[LSHT](http://tcci.ccf.org.cn/conference/2014/dldoc/evatask6.pdf)，[LCC](https://arxiv.org/abs/2306.14893)和[RepoBench-P](https://arxiv.org/abs/2306.03091)。
 
 ## 引用
-本工作由**THUKEG**和**Zhipu AI**共同完成，相关论文正在撰写中，届时将更新引用信息，敬请关注~
+本工作由**THU-KEG**和**Zhipu AI**共同完成，相关论文正在撰写中，届时将更新引用信息，敬请关注~
 
 如果您使用Longbench，请一并引用LongBench所基于的数据集对应的论文，相关引用信息在[这里](refs/ref.bib)。
