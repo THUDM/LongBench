@@ -1,66 +1,67 @@
-# 任务统计
+# Task statistics
 
-| 任务              |      任务类型  |      评价指标  |     平均长度                                       |语言 | Sample数量|
-| :--------- | :-----------:| :-----------: |:---------: | :-------------: |:---------: |
-| HotpotQA   | 多文档QA       | F1                        |9,149                           |英文                           |200                           |
-| 2WikiMultihopQA| 多文档QA | F1                        |4,885                           |英文                           |200                           |
-| Musique| 多文档QA   | F1                        |7,798                           |英文                           |200                           |
-| DuReader| 多文档QA  | Rouge-L                 |15,768                           |中文                           |200                           |
-| MultiFieldQA-en| 单文档QA | F1                        |4,559                           |英文                           |150                           |
-| MultiFieldQA-zh| 单文档QA | F1                        |6,771                           |中文                           |200                           |
-| NarrativeQA| 单文档QA | F1                        |18,405                           |英文                           |200                           |
-| Qasper| 单文档QA    | F1                        |3,619                           |英文                           |200                           |
-| GovReport| 摘要 | Rouge-L                 |8,169                           |英文                           |200                           |
-| QMSum| 摘要     | Rouge-L                 |10,546                           |英文                           |200                           |
-| VCSUM| 摘要     | Rouge-L                 |15,147                           |中文                           |200                           |
-| TriviaQA| Few shot  | F1                        |8,015                           |英文                           |200                           |
-| NQ| Few shot | F1                        |8,210                           |英文                           |200                           |
-| TREC| Few shot | Accuracy                |5,176                           |英文                           |200                           |
-| LSHT| Few shot | Accuracy                |22,333                           |中文                           |200                           |
-| PassageRetrieval-en| 合成任务 | Accuracy                |9,288                           |英文                           |200                           |
-| PassageCount| 合成任务 | Accuracy                |11,141                           |英文                           |200                           |
-| PassageRetrieval-zh | 合成任务 | Accuracy                |6,745                           |中文                           |200                           |
-| LCC| 代码 | Edit Sim              |1,235                           |Python/C#/Java                           |500                           |
-| RepoBench-P| 代码 | Edit Sim                |5,622                           |Python/Java                           |500                           |
+| Task          | Task Type | Eval metric |     Avg len                            |Language | \#Sample |
+| --------- | -------------| ------------- |--------- | ------------- |--------- |
+| HotpotQA   | Multi-doc QA | F1                        |9149                           |EN                           |200                           |
+| 2WikiMultihopQA| Multi-doc QA | F1                        |4885                           |EN                           |200                           |
+| Musique| Multi-doc QA | F1                        |7798                           |EN                           |200                           |
+| DuReader| Multi-doc QA | Rouge-L                 |15768                           |ZH                           |200                           |
+| MultiFieldQA-en| Single-doc QA | F1                        |4559                           |EN                           |150                           |
+| MultiFieldQA-zh| Single-doc QA | F1                        |6771                           |ZH                           |200                           |
+| NarrativeQA| Single-doc QA | F1                        |18405                           |EN                           |200                           |
+| Qasper| Single-doc QA | F1                        |3619                           |EN                           |200                           |
+| GovReport| Summarization | Rouge-L                 |8169                           |EN                           |200                           |
+| QMSum| Summarization | Rouge-L                 |10546                           |EN                           |200                           |
+| VCSUM| Summarization | Rouge-L                 |15147                           |ZH                           |200                           |
+| TriviaQA| Few shot  | F1                        |8015                           |EN                           |200                           |
+| NQ| Few shot | F1                        |8210                           |EN                           |200                           |
+| TREC| Few shot | Accuracy                |5176                           |EN                           |200                           |
+| LSHT| Few shot | Accuracy                |22333                           |ZH                           |200                           |
+| PassageRetrieval-en| Synthetic | Accuracy                |9288                           |EN                           |200                           |
+| PassageCount| Synthetic | Accuracy                |11141                           |EN                           |200  |
+| PassageRetrieval-zh | Synthetic | Accuracy                |6745                           |ZH                           |200                           |
+| LCC| Code | Edit Sim              |1235                           |Python/C#/Java                           |500                           |
+| RepoBench-P| Code | Edit Sim                |5622                           |Python/Java                           |500                           |
 
-> 注：为了避免不同Tokenizer统计的差距，我们使用单词数（Python的split函数）来统计英文数据集和代码数据集的平均长度，使用汉字数来统计中文数据集的平均长度。
+> Note: In order to avoid discrepancies caused by different tokenizers, we use the word count (using Python's split function) to calculate the average length of English datasets and code datasets, and use the character count to calculate the average length of Chinese datasets.
 
-# 任务说明
+# Task description
 
-| 任务              | 任务说明                                                     |
-| :----------------- | :----------------------------------------------------------- |
-| HotpotQA          | 基于多篇给定的文档，回答相关问题                             |
-| 2WikiMultihopQA   | 基于多篇给定的文档，回答相关问题                             |
-| Musique           | 基于多篇给定的文档，回答相关问题                             |
-| DuReader          | 基于多篇给定的检索文档，回答相关的中文问题                   |
-| MultiFieldQA-en   | 基于单篇文档，回答英文问题，文档所属的领域相对多元           |
-| MultiFieldQA-zh   | 基于单篇文档，回答中文问题，文档所属的领域相对多元           |
-| NarrativeQA       | 基于故事或剧本提问，包括对人物、情节、主题等重要元素的理解   |
-| Qasper            | 基于单篇论文的提出，问题由NLP的读者提出，并由NLP从业者回答   |
-| GovReport         | 摘要任务，要求对政府的工作报告进行总结摘要                   |
-| QMSum             | 摘要任务，要求基于用户的查询对会议记录进行摘要               |
-| VCSUM             | 摘要任务，要求对中文会议记录进行总结摘要                     |
-| TriviaQA          | 单文档问答任务，提供若干的Few Shot样例                       |
-| NQ                | 单文档问答任务，提供若干的Few Shot样例                       |
-| TREC              | 分类任务，要求对问题进行分类，一共包含50个类别               |
-| LSHT              | 中文分类任务，要求对新闻进行分类，一共包含24个类别           |
-| PassageRetrieval-en | 给定30个英文维基的段落，判断给定的摘要属于哪个段落           |
-| PassageCount | 判断给定的若干的段落中不重复的段落一共有几个           |
-| PassageRetrieval-zh | 给定若干个出自C4数据集的中文段落，判断给定的摘要属于哪个段落 |
-| LCC               | 给定一段较长代码，要求预测出下一行代码                       |
-| RepoBench-P       | 给定一个github仓库内多个文件中的代码（包含文件间依赖），要求预测出下一行代码 |
+| Task              | Task Description                                            |
+| ----------------- | ------------------------------------------------------------ |
+| HotpotQA          | Answer related questions based on multiple given documents   |
+| 2WikiMultihopQA   | Answer related questions based on multiple given documents   |
+| Musique           | Answer related questions based on multiple given documents   |
+| DuReader          | Answer related Chinese questions based on multiple retrieved documents |
+| MultiFieldQA-en   | Answer English questions based on a single document, which comes from a relatively diverse field |
+| MultiFieldQA-zh   | Answer Chinese questions based on a single document, which comes from a relatively diverse field |
+| NarrativeQA       | Ask questions based on stories or scripts, including understanding of important elements such as characters, plots, themes, etc. |
+| Qasper            | Ask questions based on a single paper, questions proposed by NLP readers, and answered by NLP practitioners |
+| GovReport         | A summarization task that requires summarizing government work reports |
+| QMSum             | A summarization task that requires summarizing meeting records based on user queries |
+| VCSUM             | A summarization task that requires summarizing Chinese meeting records |
+| TriviaQA          | Single document question answering task, providing several Few Shot examples |
+| NQ                | Single document question answering task, providing several Few Shot examples |
+| TREC              | A classification task that requires categorizing questions, includes 50 categories in total |
+| LSHT              | A Chinese classification task that requires categorizing news, includes 24 categories in total |
+| PassageRetrieval-en | Given 30 English Wikipedia paragraphs, determine which paragraph the given summary belongs to |
+| PassageCount | Determine the number of non-repeating paragraphs in a given number of paragraphs |
+| PassageRetrieval-zh | Given several Chinese paragraphs from the C4 data set, determine which paragraph the given abstract belongs to |
+| LCC               | Given a longer piece of code, predict the next line of code |
+| RepoBench-P       | Given code in multiple files within a GitHub repository (including inter-file dependencies), predict the next line of code |
 
-# 数据构造方式
 
-> 注：对于所有基于已有数据集构造的任务，我们均选用原有数据集的验证集或测试集的数据（VCSUM任务除外）
+# Task construction
 
-- [HotpotQA](https://hotpotqa.github.io/), [2WikiMultihopQA](https://aclanthology.org/2020.coling-main.580/), [Musique](https://arxiv.org/abs/2108.00573)和[DuReader](https://github.com/baidu/DuReader)任务基于原始的数据集构建，并进行相关处理使其适用于长文本评测。具体地，对于验证集中的问题，我们会选取包含答案的evidence passage和若干干扰的文章，这些文章和原始的问题共同组成了相关任务的输入。
-- MultiFiedQA-zh和MultiFieldQA-en任务由约10种来源的长文本数据组成，包含Latex论文、裁判文书、政府工作报告和谷歌索引的PDF文档等。对于每篇长文本，我们邀请了若干博士生和硕士生来进行标注，即基于长文本提问，并给出正确的答案。为了更好地进行自动化评测，我们要求标注员尽可能提出有确定性答案的问题。
-- [NarrativeQA](https://arxiv.org/pdf/1712.07040.pdf), [Qasper](https://arxiv.org/pdf/2105.03011.pdf), [GovReport](https://arxiv.org/pdf/2104.02112.pdf)和[QMSum](https://arxiv.org/pdf/2104.05938.pdf)任务直接使用原论文提供的数据。在具体的构建中，我们使用[ZeroSCROLLS](https://www.zero.scrolls-benchmark.com/)提供的模板来将对应的数据转换为纯文本的输入。
-- [VCSUM](https://arxiv.org/abs/2305.05280)任务基于原始的数据集构建，我们针对该数据设计了相应的模板将对应的数据转换为纯文本的输入。
-- [TriviaQA](https://nlp.cs.washington.edu/triviaqa/)和[NQ](https://ai.google.com/research/NaturalQuestions/)任务参考[CoLT5](https://arxiv.org/abs/2303.09752)的方式进行构建，即会提供若干基于文档进行问答的样例，并要求语言模型基于新的文档回答相关问题。
-- [TREC](https://aclanthology.org/C02-1150.pdf)和[LSHT](http://tcci.ccf.org.cn/conference/2014/dldoc/evatask6.pdf)任务基于原始的数据集构建。对于验证集中的每个问题，我们采样训练集中的若干数据组成Few-shot样例。这些样例会和验证集中的问题共同组成该任务的输入。
-- PassageRetrieval-en任务基于英文维基进行构造。对于每条数据，我们随机采样30段英文维基的段落，并选取其中一段进行摘要（使用GPT-3.5-Turbo）。该任务要求模型给出摘要应该对应哪个的原始段落。
-- PassageCount任务基于英文维基进行构造。对于每条数据，我们随机采样若干英文维基的段落，并将其中的每个段落随机重复若干次，最后将段落随机打乱。该任务要求模型判断给定的若干的段落中不重复的段落一共有几个。
-- PassageRetrieval-zh任务基于[C4](https://arxiv.org/abs/1910.10683)进行构造。对于每条数据，我们随机采样若干段来自于C4的中文段落，并选取其中一段进行摘要（使用GPT-3.5-Turbo）。该任务要求模型给出摘要应该对应哪个的原始段落。
-- [LCC](https://arxiv.org/abs/2306.14893)任务我们基于原始的代码补全数据集采样构建。[RepoBench-P](https://arxiv.org/abs/2306.03091)任务中我们选取了原数据集最具挑战性的XF-F（Cross-File-First）设定，并且参考原文中的Oracle-Filled场景，对于每一条原始数据我们随机抽取包括有效跨文件代码片段（gold snippet）在内的多个跨文件代码片段，将其拼接后作为输入，要求模型从其中利用有效的跨文件代码以补全当前文件中的代码。
+> Note: For all tasks constructed from existing datasets, we use data from the validation or test set of the existing dataset (except for VCSUM).
+
+- The tasks of [HotpotQA](https://hotpotqa.github.io/), [2WikiMultihopQA](https://aclanthology.org/2020.coling-main.580/), [Musique](https://arxiv.org/abs/2108.00573), and [DuReader](https://github.com/baidu/DuReader) are built based on the original datasets and processed to make them suitable for long text evaluation. Specifically, for questions in the validation set, we select the evidence passage that contains the answer and several distracting articles. These articles together with the original question constitute the input of the related tasks.
+- The tasks of MultiFiedQA-zh and MultiFieldQA-en consist of long-text data from about 10 sources, including Latex papers, judicial documents, government work reports, and PDF documents indexed by Google. For each long text, we invite several PhD and master students to annotate, i.e., to ask questions based on the long text and give the correct answers. To better automate evaluation, we require the annotators to ask questions with definitive answers as much as possible.
+- The tasks of [NarrativeQA](https://arxiv.org/pdf/1712.07040.pdf), [Qasper](https://arxiv.org/pdf/2105.03011.pdf), [GovReport](https://arxiv.org/pdf/2104.02112.pdf), and [QMSum](https://arxiv.org/pdf/2104.05938.pdf) directly use the data provided by the original papers. In the specific construction, we use the template provided by [ZeroSCROLLS](https://www.zero.scrolls-benchmark.com/) to convert the corresponding data into pure text input.
+- The [VCSUM](https://arxiv.org/abs/2305.05280) task is built based on the original dataset, and we have designed a corresponding template to convert the corresponding data into pure text input.
+- The tasks of [TriviaQA](https://nlp.cs.washington.edu/triviaqa/) and [NQ](https://ai.google.com/research/NaturalQuestions/) are constructed in the manner of [CoLT5](https://arxiv.org/abs/2303.09752), which provides several examples of question and answering based on documents, and requires the language model to answer related questions based on new documents.
+- The tasks of [TREC](https://aclanthology.org/C02-1150.pdf) and [LSHT](http://tcci.ccf.org.cn/conference/2014/dldoc/evatask6.pdf) are built based on the original datasets. For each question in the validation set, we sample several data from the training set to form few-shot examples. These examples together with the questions in the validation set constitute the input for this task.
+- The PassageRetrieval-en task is constructed based on English Wikipedia. For each piece of data, we randomly sample 30 paragraphs from English Wikipedia and select one for summarization (using GPT3.5 Turbo). The task requires the model to specify which original paragraph the summary corresponds to.
+- The PassageCount task is constructed based on the English wiki. For each piece of data, we randomly sample several passages from English Wikipedia, repeat each paragraph at random several times, and finally shuffle the paragraphs at random. This task requires the model to determine how many paragraphs are not repeated in a given number of paragraphs.
+- The PasskeyRetrieval-zh task is constructed based on [C4](https://arxiv.org/abs/1910.10683). For each piece of data, we randomly sample several Chinese paragraphs from C4 and select one of them for summary (using GPT3.5 Turbo). This task requires the model to give the original paragraph to which the summary should correspond.
+- For the [LCC](https://arxiv.org/abs/2306.14893) task, we sample from the original code completion dataset. In the [RepoBench-P](https://arxiv.org/abs/2306.03091) task, we select the most challenging XF-F (Cross-File-First) setting from the original dataset and refer to the Oracle-Filled scenario in the original text. For each original piece of data, we randomly extract multiple cross-file code snippets, including the effective cross-file code snippet (gold snippet), and concatenate them as input, requiring the model to use the effective cross-file code to complete the current file's code.
