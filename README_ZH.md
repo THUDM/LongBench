@@ -1,6 +1,6 @@
 ![](misc/logo.gif)
 <p align="center">
-    🤗 <a href="https://huggingface.co/THUDM/chatglm-6b" target="_blank">HF Repo</a> • 📃 Paper coming soon!
+    🤗 <a href="https://huggingface.co/datasets/THUDM/LongBench" target="_blank">HF Repo</a> • 📃 Paper coming soon!
 </p>
 
 Read this in [English](README.md).
@@ -21,6 +21,13 @@ LongBench包含13个英文任务、5个中文任务和2个代码任务，多数�
 | Few-shot学习 |     3      |     1      |     -      |
 |   合成任务   |     2      |     1      |     -      |
 |   代码补全   |     -      |     -      |     2      |
+
+## Table of Contents
+- [排行榜](#排行榜)
+- [如何在LongBench上评测模型](#如何在LongBench上评测模型)
+- [详细评测结果](#详细评测结果)
+- [致谢](#致谢)
+- [引用](#引用)
 
 ## 排行榜
 我们在这里展示了所有模型在Zero-shot场景下，在中文和英文各大类任务上得分的平均值（%），各任务评估所用指标请参考[这里](task_zh.md)。
@@ -172,4 +179,4 @@ python eval.py
 ## 引用
 本工作由**THUKEG**和**Zhipu AI**共同完成，相关论文正在撰写中，届时将更新引用信息，敬请关注~
 
-如果您使用该Benchmark，可以一并引用LongBench所基于的数据集对应的论文，相关引用信息列举在[这里](refs/ref.bib)。
+如果您使用Longbench，请一并引用LongBench所基于的数据集对应的论文，相关引用信息在[这里](refs/ref.bib)。

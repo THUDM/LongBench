@@ -1,17 +1,17 @@
 ![](misc/logo.gif)
 <p align="center">
-    🤗 <a href="https://huggingface.co/THUDM/chatglm-6b" target="_blank">HF Repo</a> • 📃 Paper coming soon!
+    🤗 <a href="https://huggingface.co/datasets/THUDM/LongBench" target="_blank">HF Repo</a> • 📃 Paper coming soon!
 </p>
 
-阅读 [中文版本](README_ZH.md)
+阅读[中文版本](README_ZH.md).
 
 # LongBench: A Multilingual, Multitask Benchmark Tailored for Long Context Understanding
 
-**LongBench** is the first comprehensive dataset for multi-language, multi-task, and comprehensive assessment of **long text understanding** capabilities of large language models. In the context of the widespread attention to the multi-language capabilities of large models, LongBench includes different languages (Chinese and English) to provide a more comprehensive evaluation of the large models' multi-language capabilities in long texts. In addition, LongBench consists of twenty different tasks, covering key long-text application scenarios such as single-document QA, multi-document QA, summaries, few-shot learning, code completion, and synthesis tasks.
+**LongBench** is the first comprehensive dataset for multilingual, multitask, and comprehensive assessment of **long context understanding** capabilities of large language models. LongBench includes different languages (Chinese and English) to provide a more comprehensive evaluation of the large models' multilingual capabilities on long contexts. In addition, LongBench consists of 20 different tasks, covering key long context application scenarios such as single-document QA, multi-document QA, summarization, few-shot learning, code completion, and synthetic tasks.
 
-We are fully aware of the potentially high costs involved in the model evaluation process, especially in the context of long-text scenarios (such as manual annotation costs or API call costs). Therefore, we have adopted a fully automated evaluation method, aimed at measuring and evaluating the model's ability to understand long texts at the lowest cost and most effectively.
+We are fully aware of the potentially high costs involved in the model evaluation process, especially in the context of long context scenarios (such as manual annotation costs or API call costs). Therefore, we adopt a fully automated evaluation method, aimed at measuring and evaluating the model's ability to understand long contexts at the lowest cost.
 
-LongBench includes 13 English tasks, 5 Chinese tasks, and 2 code tasks, with the average length of most tasks ranging from 5k to 15k. From the main task categories, LongBench includes six types of tasks, namely multi-document QA, single-document QA, summaries, Few-shot learning, synthetic tasks, and code completion. For detailed statistics and construction methods of LongBench tasks, please refer [here](task.md).
+LongBench includes 13 English tasks, 5 Chinese tasks, and 2 code tasks, with the average length of most tasks ranging from 5k to 15k. For the main task categories, LongBench includes six types of tasks, namely multi-document QA, single-document QA, summaries, Few-shot learning, synthetic tasks, and code completion. For detailed statistics and construction methods of LongBench tasks, please refer [here](task.md).
 
 | Task Type | \#English Task | \#Chinese Task | \#Code Task |
 | :-------: | :--------------------: | :--------------------: | :------------------: |
@@ -22,8 +22,15 @@ LongBench includes 13 English tasks, 5 Chinese tasks, and 2 code tasks, with the
 | Synthetic Tasks | 2 | 1 | - |
 | Code Completion | - | - | 2 |
 
+## Table of Contents
+- [Leaderboard](#leaderboard)
+- [How to evaluate on LongBench](#how-to-evaluate-on-LongBench)
+- [Evaluation Result on Each Dataset](#evaluation-result-on-each-dataset)
+- [Acknowledgement](#acknowledgement)
+- [Citation](#citation)
+
 ## Leaderboard
-Here is the average score (%) of all models on various major tasks in both Chinese and English languages under the Zero-shot scenario. Please refer to this [link](task.md) for the evaluation metrics used for each task.
+Here is the average scores (%) on the main task categories in both Chinese and English languages under the Zero-shot scenario. Please refer to this [link](task.md) for the evaluation metrics used for each task.
 
 #### English
 |                   | Avg  | Single-Doc QA | Multi-Doc QA | Summarization | Few-shot Learning | Code Completion | Synthetic Tasks |
@@ -48,17 +55,17 @@ Here is the average score (%) of all models on various major tasks in both Chine
 | ChatGLM2-6B       | 22.5 |     33.0      |     15.2     |     14.6      |       20.5        |      46.1       |       5.5       |
 | ChatGLM2-6B-32k   | 41.3 |     52.0      |     34.3     |     16.3      |       29.9        |      52.7       |      62.5       |
 
-#### Radar Chart of Long Text Task Capability 
+#### Radar Chart on Long Context Capability 
 
 ![](misc/radar.png)
 
-#### Variation of Abilities under Different Text Lengths
-To more specifically analyze the model's relative performance under different text lengths, the following chart shows the average relative scores on all tasks over different text length intervals.
+#### Variation of Abilities under Different Context Lengths
+To more specifically analyze the models' relative performance under different context lengths, the following chart shows the average relative scores on all tasks over different context length intervals.
 ![](misc/curve.png)
 
-> Note: Assume that the model scores x on the data within a specific length range of a task, and y on all data of that task, then the model's **relative score** for that length range is (x/y-1). To better compare the trends of different models, we shift all the lines to 0 from 0-4k.
+> Note: Assume that the model scores x on the data within a specific length range of a task, and y on all data of that task, then the model's **relative score** for that length range is (x/y-1). To better compare the trends of different models, we shift all the lines to 0 on 0-4k.
 
-## How to evaluate models on LongBench
+## How to evaluate on LongBench
 
 #### Loading Data
 You can download and load the **LongBench** data through the Hugging Face datasets ([🤗 HF Repo](https://huggingface.co/datasets/THUDM/LongBench)):
@@ -80,10 +87,10 @@ All data in **LongBench** are standardized to the following format:
 
 ```json
 {
-    "input": "The input/command for the task, usually short, such as questions in QA, queries in Few-shot tasks, etc.",
-    "context": "The long context text required for the task, such as documents, cross-file code, few-shot samples in Few-shot tasks",
-    "answers": "List composed of all standard answers",
-    "length": "Total length of the first three items of text (counted in characters for Chinese and words for English)",
+    "input": "The input/command for the task, usually short, such as questions in QA, queries in Few-shot tasks, etc",
+    "context": "The long context required for the task, such as documents, cross-file code, few-shot examples in Few-shot tasks",
+    "answers": "A List of all true answers",
+    "length": "Total length of the first three items (counted in characters for Chinese and words for English)",
     "dataset": "The name of the dataset to which this piece of data belongs",
     "language": "The language of this piece of data",
     "all_classes": "All categories in classification tasks, null for non-classification tasks",
@@ -92,19 +99,19 @@ All data in **LongBench** are standardized to the following format:
 ```
 
 #### Evaluation
-We provide an evaluation code using ChatGLM2-6B as an example. Firstly, run the [pred.py](pred.py) under the repository:
+We provide an evaluation code using ChatGLM2-6B as an example. First, run the [pred.py](pred.py) under the repository:
 ```bash
 CUDA_VISIBLE_DEVICES=0 python pred.py
 ```
-You can get the model outputs on all datasets in the `pred/` folder. After that, run the evaluation code of [eval.py](eval.py):
+You can get the model outputs on all datasets in the `pred/` folder. After that, run the evaluation code in [eval.py](eval.py):
 ```bash
 python eval.py
 ```
-You can get the evaluation results on various datasets in `result.json`. Please note that we provide the input format suitable for each dataset and the maximum output length limit we summarized in `config/`. You can modify them during the evaluation to better suit the model you want to evaluate. After modification, when evaluating with [pred.py](pred.py), the data will be automatically organized according to the new format to get the corresponding model output.
+You can get the evaluation results on all datasets in `result.json`. Please note that in `config/`, we provide the input format suitable for each dataset and the maximum output length. Feel free to modify them to better suit the model you want to evaluate. After modification, when evaluating with [pred.py](pred.py), the data will be automatically organized according to the new format to get the corresponding model output.
 
 ## Evaluation Result on Each Dataset
 
-The following tables display the Zero-shot evaluation results (%) of the model on all subtask datasets, where Chinese datasets are denoted by "zh" (please refer to this [link](task.md) for the evaluation metrics used for each task).
+The following tables show the Zero-shot evaluation results (%) on all datasets, where Chinese datasets are denoted by "zh" (please refer to this [link](task.md) for the evaluation metrics used for each task).
 
 #### Single-Document QA
 |                   | NarrativeQA | Qasper | MultiFieldQA-en | MultiFieldQA-zh |
@@ -177,11 +184,11 @@ The following tables display the Zero-shot evaluation results (%) of the model o
 | ChatGLM2-6B       |         3.2         |      2.1      |         5.5         |
 | ChatGLM2-6B-32k   |        77.5         |      2.0      |        62.5         |
 
-## Acknowledgements
+## Acknowledgement
 
 - Some of the tasks of **LongBench** are based on the datasets proposed by previous researchers, including [HotpotQA](https://hotpotqa.github.io/), [2WikiMultihopQA](https://aclanthology.org/2020.coling-main.580/), [Musique](https://arxiv.org/abs/2108.00573), [DuReader](https://github.com/baidu/DuReader), [NarrativeQA](https://arxiv.org/pdf/1712.07040.pdf), [Qasper](https://arxiv.org/pdf/2105.03011.pdf), [GovReport](https://arxiv.org/pdf/2104.02112.pdf), [QMSum](https://arxiv.org/pdf/2104.05938.pdf), [VCSUM](https://arxiv.org/abs/2305.05280), [TriviaQA](https://nlp.cs.washington.edu/triviaqa/), [NQ](https://ai.google.com/research/NaturalQuestions/), [TREC](https://aclanthology.org/C02-1150.pdf), [LSHT](http://tcci.ccf.org.cn/conference/2014/dldoc/evatask6.pdf), [LCC](https://arxiv.org/abs/2306.14893) and [RepoBench-P](https://arxiv.org/abs/2306.03091).
 
 ## Citation
-This work is jointly completed by **THUKEG** and **Zhipu AI**. The related paper is currently being written, and the citation information will be updated when it's ready. Please stay tuned~
+This is a joint work by **THU-KEG** and **Zhipu AI**. We are currently working on the paper, and the citation information will be updated when it's ready. Please stay tuned~
 
-If you use this benchmark, you can also cite the papers corresponding to the datasets that LongBench is based on. The relevant citation information is listed [here](refs/ref.bib).
+When citing our work, please cite all of the original dataset papers. The relevant citation information is listed [here](refs/ref.bib).
