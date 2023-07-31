@@ -5,13 +5,13 @@
 
 阅读[中文版本](README_ZH.md).
 
-# LongBench: A Multilingual, Multitask Benchmark for Long Context Understanding
+# LongBench: A Bilingual, Multitask Benchmark for Long Context Understanding
 
-**LongBench** is the first benchmark for multilingual, multitask, and comprehensive assessment of **long context understanding** capabilities of large language models. LongBench includes different languages (Chinese and English) to provide a more comprehensive evaluation of the large models' multilingual capabilities on long contexts. In addition, LongBench consists of 20 different tasks, covering key long context application scenarios such as single-document QA, multi-document QA, summarization, few-shot learning, code completion, and synthetic tasks.
+**LongBench** is the first benchmark for bilingual, multitask, and comprehensive assessment of **long context understanding** capabilities of large language models. LongBench includes different languages (Chinese and English) to provide a more comprehensive evaluation of the large models' multilingual capabilities on long contexts. In addition, LongBench is composed of six major categories and twenty different tasks, covering key long-text application scenarios such as multi-document QA, single-document QA, summarization, Few-shot learning, code completion, and synthesis tasks.
 
 We are fully aware of the potentially high costs involved in the model evaluation process, especially in the context of long context scenarios (such as manual annotation costs or API call costs). Therefore, we adopt a fully automated evaluation method, aimed at measuring and evaluating the model's ability to understand long contexts at the lowest cost.
 
-LongBench includes 13 English tasks, 5 Chinese tasks, and 2 code tasks, with the average length of most tasks ranging from 5k to 15k. For the main task categories, LongBench includes six types of tasks, namely multi-document QA, single-document QA, summaries, Few-shot learning, synthetic tasks, and code completion. For detailed statistics and construction methods of LongBench tasks, please refer [here](task.md).
+LongBench includes 13 English tasks, 5 Chinese tasks, and 2 code tasks, with the average length of most tasks ranging from 5k to 15k. For detailed statistics and construction methods of LongBench tasks, please refer [here](task.md).
 
 | Task Type | \#English Task | \#Chinese Task | \#Code Task |
 | :-------: | :--------------------: | :--------------------: | :------------------: |
@@ -31,6 +31,8 @@ LongBench includes 13 English tasks, 5 Chinese tasks, and 2 code tasks, with the
 
 ## Leaderboard
 Here is the average scores (%) on the main task categories in both Chinese and English languages under the Zero-shot scenario. Please refer to this [link](task.md) for the evaluation metrics used for each task.
+
+> Note: For text exceeding the processing length capability of the model, we truncate from the middle of the text, preserving information from the beginning and end, in accordance with the observations from [Lost in the Middle](https://arxiv.org/abs/2307.03172). Experiments show that this truncation method has the least impact on model performance.
 
 #### English
 |                   | Avg  | Single-Doc QA | Multi-Doc QA | Summarization | Few-shot Learning | Code Completion | Synthetic Tasks |
