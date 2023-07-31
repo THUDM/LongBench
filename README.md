@@ -5,7 +5,7 @@
 
 阅读[中文版本](README_ZH.md).
 
-# LongBench: A Multilingual, Multitask Benchmark Tailored for Long Context Understanding
+# LongBench: A Multilingual, Multitask Benchmark for Long Context Understanding
 
 **LongBench** is the first benchmark for multilingual, multitask, and comprehensive assessment of **long context understanding** capabilities of large language models. LongBench includes different languages (Chinese and English) to provide a more comprehensive evaluation of the large models' multilingual capabilities on long contexts. In addition, LongBench consists of 20 different tasks, covering key long context application scenarios such as single-document QA, multi-document QA, summarization, few-shot learning, code completion, and synthetic tasks.
 
