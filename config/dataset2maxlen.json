@@ -1,6 +1,5 @@
 {
     "passage_count": 32,
-    "passage_retrieval": 32,
     "trec": 64,
     "nq": 32,
     "triviaqa": 32,
@@ -11,7 +10,8 @@
     "qasper": 128,
     "gov_report": 512,
     "qmsum": 512,
-    "passkey_retrieval": 32,
+    "passage_retrieval_zh": 32,
+    "passage_retrieval_en": 32,
     "lsht": 64,
     "dureader": 128,
     "vcsum": 512,
