@@ -11,7 +11,7 @@ def build_chat(tokenizer, prompt):
 
 def get_pred(model, tokenizer, data, max_length, max_gen, prompt_format, dataset, device):
     preds = []
-    for json_obj in tqdm(data[:10]):
+    for json_obj in tqdm(data):
         prompt = prompt_format.format(**json_obj)
         # truncate to fit max_length (we suggest truncate in the middle, since the left and right side may contain crucial instructions)
         tokenized_prompt = tokenizer(prompt, truncation=False, return_tensors="pt").input_ids[0]
