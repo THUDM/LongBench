@@ -33,7 +33,7 @@ dataset2metric = {
     "lsht": classification_score,
     "passage_retrieval_en": retrieval_score,
     "passage_count": count_score,
-    "passkey_retrieval_zh": retrieval_zh_score,
+    "passage_retrieval_zh": retrieval_zh_score,
     "lcc": code_sim_score,
     "repobench-p": code_sim_score,
 }
