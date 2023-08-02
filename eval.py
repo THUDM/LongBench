@@ -1,7 +1,5 @@
 import os
 import json
-from typing import List, Any, Dict, Callable
-from tqdm import tqdm
 
 from metrics import (
     qa_f1_score,
