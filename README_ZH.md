@@ -97,7 +97,7 @@ for dataset in datasets:
 ```
 
 #### 评测
-我们以ChatGLM2-6B为例提供了一份评测代码。首先，运行仓库下的[pred.py](pred.py)
+通过pip安装依赖：`pip install -r requirements.txt`。我们以ChatGLM2-6B为例提供了一份评测代码。首先，运行仓库下的[pred.py](pred.py)
 ```bash
 CUDA_VISIBLE_DEVICES=0 python pred.py
 ```

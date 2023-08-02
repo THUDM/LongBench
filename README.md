@@ -101,7 +101,7 @@ All data in **LongBench** are standardized to the following format:
 ```
 
 #### Evaluation
-We provide an evaluation code using ChatGLM2-6B as an example. First, run the [pred.py](pred.py) under the repository:
+Install the requirements with pip: `pip install -r requirements.txt`. We provide an evaluation code using ChatGLM2-6B as an example. First, run the [pred.py](pred.py) under the repository:
 ```bash
 CUDA_VISIBLE_DEVICES=0 python pred.py
 ```
