@@ -57,5 +57,5 @@ if __name__ == '__main__':
         preds = get_pred(model, tokenizer, data, max_length, max_gen, prompt_format, dataset, device)
         with open(f"pred/{dataset}.jsonl", "w") as f:
             for pred in preds:
-                json.dump(pred, f)
+                json.dump(pred, f, ensure_ascii=False)
                 f.write('\n')
