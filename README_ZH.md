@@ -5,7 +5,7 @@
 
 Read this in [English](README.md).
 
-# LongBench: 多任务中英双语长文本理解评测基准
+# 📖 LongBench: 多任务中英双语长文本理解评测基准
 
 **LongBench**是第一个多任务、中英双语、针对大语言模型**长文本理解能力**的评测基准。在目前大模型多语言能力引起广泛关注的背景下，LongBench涵盖了不同的语言（中文和英文），以此来对大模型在长文本下的多语言能力进行更全面的评估。同时，LongBench由六大类、二十个不同的任务组成，覆盖了单文档QA、多文档QA、摘要、Few-shot学习、代码补全和合成任务等关键的长文本应用场景。
 
@@ -22,14 +22,15 @@ LongBench包含13个英文任务、5个中文任务和2个代码任务，多数�
 |   合成任务   |     2      |     1      |     -      |
 |   代码补全   |     -      |     -      |     2      |
 
-## 目录
-- [排行榜](#排行榜)
-- [如何在LongBench上评测模型](#如何在LongBench上评测模型)
-- [详细评测结果](#详细评测结果)
-- [致谢](#致谢)
-- [引用](#引用)
+## 🔍 目录
+- [🖥️ 排行榜](#排行榜)
+- [⚙️ 如何在LongBench上评测模型](#如何在LongBench上评测模型)
+- [📊 详细评测结果](#详细评测结果)
+- [📄 致谢](#致谢)
+- [📝 引用](#引用)
 
-## 排行榜
+<a name="排行榜"></a>
+## 🖥️ 排行榜
 我们在这里展示了所有模型在Zero-shot场景下，在中文和英文各大类任务上得分的平均值（%），各任务评估所用指标请参考[这里](task_zh.md)。
 
 > 注：对于超出模型处理长度能力的文本，参考[Lost in the Middle](https://arxiv.org/abs/2307.03172)的观察，我们从文本中间进行截断，保持前后部分的信息。实验表明，这种截断方式对模型性能影响最小。
@@ -65,7 +66,8 @@ LongBench包含13个英文任务、5个中文任务和2个代码任务，多数�
 
 > 注：假设模型在某个任务的特定长度范围内数据上得分为x，在该任务所有数据上得分为y，则模型在该长度范围的**相对分数**为(x/y-1)。为了更好比较不同模型的变化趋势，我们在0-4k将所有折线平移至0。
 
-## 如何在LongBench上评测模型
+<a name="如何在LongBench上评测模型"></a>
+## ⚙️ 如何在LongBench上评测模型
 
 #### 载入数据
 你可以通过Hugging Face datasets来下载并载入**LongBench**的数据（[🤗 HF Repo](https://huggingface.co/datasets/THUDM/LongBench)）:
@@ -107,7 +109,8 @@ python eval.py
 ```
 可以在`result.json`中得到在各数据集上的评测结果。请注意，我们在`config/`下提供了我们总结出来的在各数据集上适合的输入格式和最大输出长度限制，在评测的时候可以进行修改以更好地适用你要评测的模型，修改后在[pred.py](pred.py)评测时会自动按照新的格式去整理数据并得到对应的模型输出。
 
-## 详细评测结果
+<a name="详细评测结果"></a>
+## 📊 详细评测结果
 下面的几张表格展示了模型在所有子任务数据集上的Zero-shot评测结果（%），其中的中文数据集以“zh”标示（各任务评估所用指标请参考[这里](task_zh.md)）。
 
 #### 单文档QA
@@ -176,10 +179,12 @@ python eval.py
 | ChatGLM2-6B | 3.2 | 2.1 | 5.5 |
 | ChatGLM2-6B-32k | 77.5 | 2.0 | 62.5 |
 
-## 致谢
+<a name="致谢"></a>
+## 📄 致谢
 - **LongBench**的部分任务基于之前的研究者提出的数据集构建，包括[HotpotQA](https://hotpotqa.github.io/)，[2WikiMultihopQA](https://aclanthology.org/2020.coling-main.580/)，[Musique](https://arxiv.org/abs/2108.00573)，[DuReader](https://github.com/baidu/DuReader)，[NarrativeQA](https://arxiv.org/pdf/1712.07040.pdf)，[Qasper](https://arxiv.org/pdf/2105.03011.pdf)，[GovReport](https://arxiv.org/pdf/2104.02112.pdf)，[QMSum](https://arxiv.org/pdf/2104.05938.pdf)，[VCSUM](https://arxiv.org/abs/2305.05280)，[TriviaQA](https://nlp.cs.washington.edu/triviaqa/)，[NQ](https://ai.google.com/research/NaturalQuestions/)，[TREC](https://aclanthology.org/C02-1150.pdf)，[LSHT](http://tcci.ccf.org.cn/conference/2014/dldoc/evatask6.pdf)，[LCC](https://arxiv.org/abs/2306.14893)和[RepoBench-P](https://arxiv.org/abs/2306.03091)。
 
-## 引用
+<a name="引用"></a>
+## 📝 引用
 本工作由**THU-KEG**和**Zhipu AI**共同完成，相关论文正在撰写中，届时将更新引用信息，敬请关注~
 
 如果您使用Longbench，请一并引用LongBench所基于的数据集对应的论文，相关引用信息在[这里](refs/ref.bib)。
