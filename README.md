@@ -23,13 +23,13 @@ LongBench includes 13 English tasks, 5 Chinese tasks, and 2 code tasks, with the
 | Code Completion | - | - | 2 |
 
 ## 🔍 Table of Contents
-- [🖥️Leaderboard](#🖥️Leaderboard)
+- [🖥️ Leaderboard](#%F0%9F%96%A5%EF%B8%8F%20Leaderboard)
 - [How to evaluate on LongBench](#how-to-evaluate-on-LongBench)
 - [Evaluation Result on Each Dataset](#evaluation-result-on-each-dataset)
 - [Acknowledgement](#acknowledgement)
 - [Citation](#citation)
 
-## 🖥️Leaderboard
+## 🖥️ Leaderboard
 Here is the average scores (%) on the main task categories in both Chinese and English languages under the Zero-shot scenario. Please refer to this [link](task.md) for the evaluation metrics used for each task.
 
 > Note: For text exceeding the processing length capability of the model, we truncate from the middle of the text, preserving information from the beginning and end, in accordance with the observations from [Lost in the Middle](https://arxiv.org/abs/2307.03172). Experiments show that this truncation method has the least impact on model performance.
