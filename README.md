@@ -67,7 +67,7 @@ To more specifically analyze the models' relative performance under different co
 
 > Note: Assume that the model scores x on the data within a specific length range of a task, and y on all data of that task, then the model's **relative score** for that length range is (x/y-1). To better compare the trends of different models, we shift all the lines to 0 on 0-4k.
 
-## ⚙️ How to evaluate on LongBench
+## How to evaluate on LongBench
 
 #### Load Data
 You can download and load the **LongBench** data through the Hugging Face datasets ([🤗 HF Repo](https://huggingface.co/datasets/THUDM/LongBench)):
