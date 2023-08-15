@@ -23,7 +23,7 @@ LongBench includes 13 English tasks, 5 Chinese tasks, and 2 code tasks, with the
 | Code Completion | - | - | 2 |
 
 ## 🔍 Table of Contents
-- [🖥️ Leaderboard](#%F0%9F%96%A5%EF%B8%8F%20Leaderboard)
+- [Leaderboard](#%F0%9F%96%A5%EF%B8%8F%20Leaderboard)
 - [How to evaluate on LongBench](#how-to-evaluate-on-LongBench)
 - [Evaluation Result on Each Dataset](#evaluation-result-on-each-dataset)
 - [Acknowledgement](#acknowledgement)
