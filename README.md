@@ -23,14 +23,14 @@ LongBench includes 13 English tasks, 5 Chinese tasks, and 2 code tasks, with the
 | Code Completion | - | - | 2 |
 
 ## 🔍 Table of Contents
-- [Leaderboard](#Leaderboard)
-- [How to evaluate on LongBench](#how-to-evaluate-on-LongBench)
-- [Evaluation Result on Each Dataset](#evaluation-result-on-each-dataset)
-- [Acknowledgement](#acknowledgement)
-- [Citation](#citation)
-
+- [🖥️ Leaderboard](#leaderboard)
+- [⚙️ How to evaluate on LongBench](#how-to-evaluate-on-LongBench)
+- [📊 Evaluation Result on Each Dataset](#evaluation-result-on-each-dataset)
+- [📄 Acknowledgement](#acknowledgement)
+- [📝 Citation](#citation)
+  
+<a name="leaderboard"></a>
 ## 🖥️ Leaderboard
-<a name="Leaderboard"></a>
 Here is the average scores (%) on the main task categories in both Chinese and English languages under the Zero-shot scenario. Please refer to this [link](task.md) for the evaluation metrics used for each task.
 
 > Note: For text exceeding the processing length capability of the model, we truncate from the middle of the text, preserving information from the beginning and end, in accordance with the observations from [Lost in the Middle](https://arxiv.org/abs/2307.03172). Experiments show that this truncation method has the least impact on model performance.
@@ -68,7 +68,8 @@ To more specifically analyze the models' relative performance under different co
 
 > Note: Assume that the model scores x on the data within a specific length range of a task, and y on all data of that task, then the model's **relative score** for that length range is (x/y-1). To better compare the trends of different models, we shift all the lines to 0 on 0-4k.
 
-## How to evaluate on LongBench
+<a name="how-to-evaluate-on-LongBench"></a>
+## ⚙️ How to evaluate on LongBench
 
 #### Load Data
 You can download and load the **LongBench** data through the Hugging Face datasets ([🤗 HF Repo](https://huggingface.co/datasets/THUDM/LongBench)):
@@ -112,6 +113,7 @@ python eval.py
 ```
 You can get the evaluation results on all datasets in `result.json`. Please note that in `config/`, we provide the input format suitable for each dataset and the maximum output length. Feel free to modify them to better suit the model you want to evaluate. After modification, when evaluating with [pred.py](pred.py), the data will be automatically organized according to the new format to get the corresponding model output.
 
+<a name="evaluation-result-on-each-dataset"></a>
 ## 📊 Evaluation Result on Each Dataset
 
 The following tables show the Zero-shot evaluation results (%) on all datasets, where Chinese datasets are denoted by "zh" (please refer to this [link](task.md) for the evaluation metrics used for each task).
@@ -187,10 +189,12 @@ The following tables show the Zero-shot evaluation results (%) on all datasets, 
 | ChatGLM2-6B       |         3.2         |      2.1      |         5.5         |
 | ChatGLM2-6B-32k   |        77.5         |      2.0      |        62.5         |
 
+<a name="acknowledgement"></a>
 ## 📄 Acknowledgement
 
 - Some of the tasks of **LongBench** are based on the datasets proposed by previous researchers, including [HotpotQA](https://hotpotqa.github.io/), [2WikiMultihopQA](https://aclanthology.org/2020.coling-main.580/), [Musique](https://arxiv.org/abs/2108.00573), [DuReader](https://github.com/baidu/DuReader), [NarrativeQA](https://arxiv.org/pdf/1712.07040.pdf), [Qasper](https://arxiv.org/pdf/2105.03011.pdf), [GovReport](https://arxiv.org/pdf/2104.02112.pdf), [QMSum](https://arxiv.org/pdf/2104.05938.pdf), [VCSUM](https://arxiv.org/abs/2305.05280), [TriviaQA](https://nlp.cs.washington.edu/triviaqa/), [NQ](https://ai.google.com/research/NaturalQuestions/), [TREC](https://aclanthology.org/C02-1150.pdf), [LSHT](http://tcci.ccf.org.cn/conference/2014/dldoc/evatask6.pdf), [LCC](https://arxiv.org/abs/2306.14893) and [RepoBench-P](https://arxiv.org/abs/2306.03091).
 
+<a name="citation"></a>
 ## 📝 Citation
 This is a joint work by **THU-KEG** and **Zhipu AI**. We are currently working on the paper, and the citation information will be updated when it's ready. Please stay tuned~
 
