@@ -220,13 +220,11 @@ python eval.py --model chatglm2-6b-32k
 <a name="引用"></a>
 ## 📝 引用
 ```
-@misc{bai2023longbench,
-      title={LongBench: A Bilingual, Multitask Benchmark for Long Context Understanding}, 
-      author={Yushi Bai and Xin Lv and Jiajie Zhang and Hongchang Lyu and Jiankai Tang and Zhidian Huang and Zhengxiao Du and Xiao Liu and Aohan Zeng and Lei Hou and Yuxiao Dong and Jie Tang and Juanzi Li},
-      year={2023},
-      eprint={2308.14508},
-      archivePrefix={arXiv},
-      primaryClass={cs.CL}
+@article{bai2023longbench,
+  title={LongBench: A Bilingual, Multitask Benchmark for Long Context Understanding},
+  author={Bai, Yushi and Lv, Xin and Zhang, Jiajie and Lyu, Hongchang and Tang, Jiankai and Huang, Zhidian and Du, Zhengxiao and Liu, Xiao and Zeng, Aohan and Hou, Lei and Dong, Yuxiao and Tang, Jie and Li, Juanzi},
+  journal={arXiv preprint arXiv:2308.14508},
+  year={2023}
 }
 ```
 如果您使用Longbench，请考虑引用LongBench所基于的数据集对应的论文，相关引用信息在[这里](refs/ref.bib)。
