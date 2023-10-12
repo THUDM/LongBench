@@ -225,13 +225,11 @@ The following tables show the Zero-shot evaluation results (%) on all datasets, 
 <a name="citation"></a>
 ## 📝 Citation
 ```
-@misc{bai2023longbench,
-      title={LongBench: A Bilingual, Multitask Benchmark for Long Context Understanding}, 
-      author={Yushi Bai and Xin Lv and Jiajie Zhang and Hongchang Lyu and Jiankai Tang and Zhidian Huang and Zhengxiao Du and Xiao Liu and Aohan Zeng and Lei Hou and Yuxiao Dong and Jie Tang and Juanzi Li},
-      year={2023},
-      eprint={2308.14508},
-      archivePrefix={arXiv},
-      primaryClass={cs.CL}
+@article{bai2023longbench,
+  title={LongBench: A Bilingual, Multitask Benchmark for Long Context Understanding},
+  author={Bai, Yushi and Lv, Xin and Zhang, Jiajie and Lyu, Hongchang and Tang, Jiankai and Huang, Zhidian and Du, Zhengxiao and Liu, Xiao and Zeng, Aohan and Hou, Lei and others},
+  journal={arXiv preprint arXiv:2308.14508},
+  year={2023}
 }
 ```
 When citing our work, please kindly consider citing the original dataset papers. The relevant citation information is listed [here](refs/ref.bib).
