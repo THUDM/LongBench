@@ -24,6 +24,7 @@ LongBench includes 14 English tasks, 5 Chinese tasks, and 2 code tasks, with the
 | Code Completion | - | - | 2 |
 
 ## 🔥 Updates
+**[2023/10/30]** The new [ChatGLM3-6B-32k](https://huggingface.co/THUDM/chatglm3-6b-32k) chat model is out, with better proficiency at long context modeling and is especially good at long document based question answering, reasoning and summarization. Check out its [performance](#leaderboard) on LongBench.
 **[2023/08/29]** The [LongBench paper](https://arxiv.org/abs/2308.14508) is released, along with several important updates to LongBench:
 1. **More comprehensive datasets**: The MultiNews dataset for multi-document summarization is added to the summarization tasks, and the summarization task SAMSum is added to the Few-shot learning tasks, replacing the previous QA task NQ. TriviaQA and RepoBench-P are resampled to ensure a more appropriate data length;
 2. **More uniformed length distribution**: LongBench-E is obtained by uniform sampling according to length, featuring a comparable amount of test data in the length intervals of 0-4k, 4-8k, and 8k+, which is more suitable for evaluating the model's ability in different input lengths variation;
@@ -50,9 +51,9 @@ Here is the average scores (%) on the main task categories in both Chinese and E
 | LongChat-v1.5-7B-32k | 34.3 | 28.7 | 20.6 | 26.7 | 60.0 | 54.1 | 15.8 |
 | XGen-7B-8k | 28.3 | 24.6 | 20.4 | 24.7 | 56.2 | 38.6 | 5.3 |
 | InternLM-7B-8k | 24.2 | 17.4 | 20.2 | 16.1 | 50.3 | 36.4 | 4.5 |
-| ChatGLM2-6B | 26.6 | 23.1 | 16.2 | 23.2 | 48.2 | 46.1 | 2.8 |
 | ChatGLM2-6B-32k | 40.9 | 32.9 | 33.7 | 27.6 | 59.1 | 52.7 | 39.2 |
 | Vicuna-v1.5-7B-16k | 31.9 | 28.0 | 18.6 | 26.0 | 66.2 | 47.3 | 5.5 |
+| ChatGLM3-6B-32k | 48.5 | 40.3 | 46.6 | 29.5 | 68.1 | 56.2 | 50.5 |
 
 #### Chinese
 
@@ -63,9 +64,9 @@ Here is the average scores (%) on the main task categories in both Chinese and E
 | LongChat-v1.5-7B-32k | 23.9 | 29.1 | 19.5 | 9.9 | 23.2 | 54.1 | 7.6 |
 | XGen-7B-8k | 15.1 | 14.8 | 11.0 | 2.2 | 20.5 | 38.6 | 3.5 |
 | InternLM-7B-8k | 18.3 | 33.6 | 11.1 | 12.4 | 15.2 | 36.4 | 0.9 |
-| ChatGLM2-6B | 22.9 | 33.2 | 16.3 | 14.5 | 20.8 | 46.1 | 6.5 |
 | ChatGLM2-6B-32k | 41.7 | 51.6 | 37.6 | 16.2 | 27.7 | 52.7 | 64.5 |
 | Vicuna-v1.5-7B-16k | 26.4 | 43.0 | 19.3 | 15.1 | 28.8 | 47.3 | 5.0 |
+| ChatGLM3-6B-32k | 52.8 | 62.3 | 44.8 | 17.8 | 42.0 | 56.2 | 94.0 |
 
 #### Radar Chart on Long Context Capability
 ![](misc/radar.png)
@@ -153,9 +154,9 @@ The following tables show the Zero-shot evaluation results (%) on all datasets, 
 | LongChat-v1.5-7B-32k | 16.9 | 27.7 | 41.4 | 29.1 |
 | XGen-7B-8k | 18.0 | 18.1 | 37.7 | 14.8 |
 | InternLM-7B-8k | 12.1 | 16.7 | 23.4 | 33.6 |
-| ChatGLM2-6B | 11.8 | 22.5 | 35.0 | 33.2 |
 | ChatGLM2-6B-32k | 21.1 | 31.5 | 46.2 | 51.6 |
 | Vicuna-v1.5-7B-16k | 19.4 | 26.1 | 38.5 | 43.0 |
+| ChatGLM3-6B-32k | 26.0 | 43.3 | 51.7 | 62.3 |
 
 #### Multi-Document QA
 |                   | HotpotQA | 2WikiMQA | Musique | DuReader (zh) |
@@ -165,9 +166,9 @@ The following tables show the Zero-shot evaluation results (%) on all datasets, 
 | LongChat-v1.5-7B-32k | 31.5 | 20.6 | 9.7 | 19.5 |
 | XGen-7B-8k | 29.7 | 21.1 | 10.3 | 11.0 |
 | InternLM-7B-8k | 28.7 | 22.8 | 9.0 | 11.1 |
-| ChatGLM2-6B | 22.4 | 20.1 | 6.1 | 16.3 |
 | ChatGLM2-6B-32k | 45.1 | 34.0 | 21.9 | 37.6 |
 | Vicuna-v1.5-7B-16k | 25.3 | 20.8 | 9.8 | 19.3 |
+| ChatGLM3-6B-32k | 54.4 | 44.9 | 40.4 | 44.78 |
 
 #### Summarization
 |            | GovReport | QMSum | MultiNews | VCSUM (zh) |
@@ -177,9 +178,9 @@ The following tables show the Zero-shot evaluation results (%) on all datasets, 
 | LongChat-v1.5-7B-32k | 30.8 | 22.7 | 26.4 | 9.9 |
 | XGen-7B-8k | 27.3 | 20.5 | 26.2 | 2.2 |
 | InternLM-7B-8k | 9.7 | 15.9 | 22.8 | 12.4 |
-| ChatGLM2-6B | 23.2 | 21.1 | 25.2 | 14.5 |
 | ChatGLM2-6B-32k | 32.4 | 24.0 | 26.5 | 16.2 |
 | Vicuna-v1.5-7B-16k | 27.9 | 22.8 | 27.2 | 15.1 |
+| ChatGLM3-6B-32k | 36.8 | 23.9 | 27.9 | 17.8 |
 
 #### Few-shot Learning
 |     | TREC | TriviaQA | SAMSum | LSHT (zh) |
@@ -189,9 +190,9 @@ The following tables show the Zero-shot evaluation results (%) on all datasets, 
 | LongChat-v1.5-7B-32k | 63.5 | 82.3 | 34.2 | 23.2 |
 | XGen-7B-8k | 65.5 | 77.8 | 25.3 | 20.5 |
 | InternLM-7B-8k | 52.0 | 77.8 | 21.2 | 15.2 |
-| ChatGLM2-6B | 44.5 | 70.6 | 29.5 | 20.8 |
 | ChatGLM2-6B-32k | 62.5 | 78.7 | 36.3 | 27.7 |
 | Vicuna-v1.5-7B-16k | 71.5 | 86.2 | 40.8 | 28.8 |
+| ChatGLM3-6B-32k | 79.0 | 87.1 | 38.2 | 42.0 |
 
 #### Synthetic Tasks
 |     | Passage Count | PassageRetrieval-en | PassageRetrieval-zh |
@@ -201,9 +202,9 @@ The following tables show the Zero-shot evaluation results (%) on all datasets, 
 | LongChat-v1.5-7B-32k | 1.0 | 30.5 | 7.6 |
 | XGen-7B-8k | 2.1 | 8.5 | 3.5 |
 | InternLM-7B-8k | 3.0 | 6.0 | 0.9 |
-| ChatGLM2-6B | 2.5 | 3.0 | 6.5 |
 | ChatGLM2-6B-32k | 1.5 | 77.0 | 64.5 |
 | Vicuna-v1.5-7B-16k | 6.5 | 4.5 | 5.0 |
+| ChatGLM3-6B-32k | 2.0 | 99.0 | 94.0 |
 
 #### Code Completion
 |     | LCC | RepoBench-P |
@@ -213,9 +214,9 @@ The following tables show the Zero-shot evaluation results (%) on all datasets, 
 | LongChat-v1.5-7B-32k | 53.0 | 55.3 |
 | XGen-7B-8k | 38.6 | 38.6 |
 | InternLM-7B-8k | 44.1 | 28.8 |
-| ChatGLM2-6B | 49.0 | 43.2 |
 | ChatGLM2-6B-32k | 55.6 | 49.9 |
 | Vicuna-v1.5-7B-16k | 51.0 | 43.5 |
+| ChatGLM3-6B-32k | 57.66 | 54.76 |
 
 <a name="acknowledgement"></a>
 ## 📄 Acknowledgement
