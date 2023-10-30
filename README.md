@@ -25,6 +25,7 @@ LongBench includes 14 English tasks, 5 Chinese tasks, and 2 code tasks, with the
 
 ## 🔥 Updates
 **[2023/10/30]** The new [ChatGLM3-6B-32k](https://huggingface.co/THUDM/chatglm3-6b-32k) chat model is out, with better proficiency at long context modeling and is especially good at long document based question answering, reasoning and summarization. Check out its [performance](#leaderboard) on LongBench.
+
 **[2023/08/29]** The [LongBench paper](https://arxiv.org/abs/2308.14508) is released, along with several important updates to LongBench:
 1. **More comprehensive datasets**: The MultiNews dataset for multi-document summarization is added to the summarization tasks, and the summarization task SAMSum is added to the Few-shot learning tasks, replacing the previous QA task NQ. TriviaQA and RepoBench-P are resampled to ensure a more appropriate data length;
 2. **More uniformed length distribution**: LongBench-E is obtained by uniform sampling according to length, featuring a comparable amount of test data in the length intervals of 0-4k, 4-8k, and 8k+, which is more suitable for evaluating the model's ability in different input lengths variation;

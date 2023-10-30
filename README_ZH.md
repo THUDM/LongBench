@@ -25,6 +25,7 @@ LongBench包含14个英文任务、5个中文任务和2个代码任务，多数�
 
 ## 🔥 更新信息
 **[2023/10/30]** 新的[ChatGLM3-6B-32k](https://huggingface.co/THUDM/chatglm3-6b-32k)chat模型已经发布，它更擅长长文本建模，尤其是基于长文档的问答、推理和总结。请在LongBench上查看其[性能](#排行榜)。
+
 **[2023/08/29]** [LongBench论文](https://arxiv.org/abs/2308.14508)发布，同时对LongBench进行了以下几项重要更新：
 1. **更全面的数据集**：在摘要任务中增加了多文档摘要MultiNews数据集，在Few-shot学习任务中增加了摘要任务SAMSum，代替之前的QA任务NQ，并对TriviaQA, RepoBench-P进行重新采样以保证数据长度更加合适；
 2. **更均匀的长度分布**：根据长度进行均匀采样得到了LongBench-E，其包含LongBench中的13个长度分布更加均匀的英文数据集，LongBench-E在0-4k，4-8k，8k+长度区间内均有数量相当的测试数据，更加适合评价模型在不同输入长度上的能力变化；
