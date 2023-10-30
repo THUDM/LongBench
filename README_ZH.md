@@ -123,15 +123,15 @@ for dataset in datasets:
 
 首先，运行仓库下的[pred.py](pred.py)，并通过`--model`选择你想评测的模型，我们以ChatGLM2-6B-32k模型为例（代码将会根据[model2path.json](config/model2path.json)中的路径自动下载HuggingFace模型，你可以修改此文件中的路径以从本地载入模型参数）：
 ```bash
-CUDA_VISIBLE_DEVICES=0 python pred.py --model chatglm2-6b-32k
+CUDA_VISIBLE_DEVICES=0 python pred.py --model chatglm3-6b-32k
 ```
 可以在`pred/`对应模型名称的文件夹下得到模型在LongBench所有数据集下的输出，类似地，通过`--e`命令：
 ```bash
-CUDA_VISIBLE_DEVICES=0 python pred.py --model chatglm2-6b-32k --e
+CUDA_VISIBLE_DEVICES=0 python pred.py --model chatglm3-6b-32k --e
 ```
 可以在`pred_e/`对应模型名称的文件夹下得到模型在LongBench-E所有数据集下的输出。此后运行[eval.py](eval.py)的评测代码：
 ```bash
-python eval.py --model chatglm2-6b-32k
+python eval.py --model chatglm3-6b-32k
 ```
 可以在存储模型输出文件夹下的`result.json`中得到模型在LongBench各数据集上的评测结果。通过`--e`命令也可以得到模型在LongBench-E所有数据集中不同长度区间内的平均得分。
 

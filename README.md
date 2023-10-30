@@ -126,15 +126,15 @@ Install the requirements with pip: `pip install -r requirements.txt`. For Llama-
 
 First, run [pred.py](pred.py) and select the model you want to evaluate via `--model`. Let's take ChatGLM2-6B-32k as an example (HuggingFace model weight will be downloaded automatically according to the path in [model2path.json](config/model2path.json), you can change the path in this file to load the model weight from local):
 ```bash
-CUDA_VISIBLE_DEVICES=0 python pred.py --model chatglm2-6b-32k
+CUDA_VISIBLE_DEVICES=0 python pred.py --model chatglm3-6b-32k
 ```
 You can obtain the output of the model under all LongBench datasets under the `pred/` folder corresponding to the model name. Similarly, with the `--e` command:
 ```bash
-CUDA_VISIBLE_DEVICES=0 python pred.py --model chatglm2-6b-32k --e
+CUDA_VISIBLE_DEVICES=0 python pred.py --model chatglm3-6b-32k --e
 ```
 You can obtain the output on LongBench-E under the `pred_e/` folder. After that, run the evaluation code in [eval.py](eval.py):
 ```bash
-python eval.py --model chatglm2-6b-32k
+python eval.py --model chatglm3-6b-32k
 ```
 You can get the evaluation results on all datasets in `result.json`. The average score of the model over different length intervals in all LongBench-E datasets can be obtained with the `--e` command.
 
