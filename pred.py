@@ -17,7 +17,9 @@ def parse_args(args=None):
 
 # This is the customized building prompt for chat models
 def build_chat(tokenizer, prompt, model_name):
-    if "chatglm" in model_name:
+    if "chatglm3" in model_name:
+        prompt = tokenizer.build_chat_input(prompt)
+    elif "chatglm" in model_name:
         prompt = tokenizer.build_prompt(prompt)
     elif "longchat" in model_name or "vicuna" in model_name:
         from fastchat.model import get_conversation_template
