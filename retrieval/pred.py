@@ -1,6 +1,7 @@
 import os
 from datasets import load_dataset
 import torch
+import litellm
 import json
 from transformers import AutoTokenizer, AutoModel, LlamaTokenizer, LlamaForCausalLM, AutoModelForCausalLM
 from tqdm import tqdm
@@ -50,8 +51,8 @@ def get_pred(model, tokenizer, data, max_length, max_gen, prompt_format, dataset
             json_obj['context'] = "".join(json_obj['retrieved'][:args.top_k])
         prompt = prompt_format.format(**json_obj)
         prompt = build_chat(tokenizer, prompt, model_name)
-        if "chatgpt" in model_name:
-            output = openai.ChatCompletion.create(model="gpt-3.5-turbo-16k",
+        if model_name in litellm.model_list:
+            output = litellm.completion(model="gpt-3.5-turbo-16k",
                  messages=[{"role": "user", "content": prompt}], max_tokens=max_gen,
                  temperature=1.0)
             pred = output['choices'][0]['message']['content']
