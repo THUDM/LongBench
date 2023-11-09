@@ -1,3 +1,4 @@
 rank_bm25
 openai
+litellm
 beir
