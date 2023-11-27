@@ -18,8 +18,7 @@ def parse_args(args=None):
 # This is the customized building prompt for chat models
 def build_chat(tokenizer, prompt, model_name):
     if "chatglm3" in model_name:
-        prompt = tokenizer.build_chat_input(prompt).input_ids[0]
-        prompt = tokenizer.decode(prompt[2:], skip_special_tokens=True)
+        prompt = tokenizer.build_chat_input(prompt)
     elif "chatglm" in model_name:
         prompt = tokenizer.build_prompt(prompt)
     elif "longchat" in model_name or "vicuna" in model_name:
@@ -60,7 +59,10 @@ def get_pred(model, tokenizer, data, max_length, max_gen, prompt_format, dataset
             prompt = tokenizer.decode(tokenized_prompt[:half], skip_special_tokens=True)+tokenizer.decode(tokenized_prompt[-half:], skip_special_tokens=True)
         if dataset not in ["trec", "triviaqa", "samsum", "lsht", "lcc", "repobench-p"]: # chat models are better off without build prompts on these tasks
             prompt = build_chat(tokenizer, prompt, model_name)
-        input = tokenizer(prompt, truncation=False, return_tensors="pt").to(device)
+        if "chatglm3" in model_name:
+            input = prompt
+        else:
+            input = tokenizer(prompt, truncation=False, return_tensors="pt").to(device)
         context_length = input.input_ids.shape[-1]
         if dataset == "samsum": # prevent illegal output on samsum (model endlessly repeat "\nDialogue"), might be a prompting issue
             output = model.generate(
