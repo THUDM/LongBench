@@ -121,7 +121,7 @@ for dataset in datasets:
 #### 评测
 通过pip安装依赖：`pip install -r requirements.txt`。对于基于Llama-2的模型，我们推荐使用Flash Attention进行优化并节省显存，可以根据[Flash Attention](https://github.com/Dao-AILab/flash-attention)的代码库来安装相关依赖。
 
-首先，运行仓库下的[pred.py](pred.py)，并通过`--model`选择你想评测的模型，我们以ChatGLM2-6B-32k模型为例（代码将会根据[model2path.json](config/model2path.json)中的路径自动下载HuggingFace模型，你可以修改此文件中的路径以从本地载入模型参数）：
+首先，运行仓库下的[pred.py](pred.py)，并通过`--model`选择你想评测的模型，我们以ChatGLM3-6B-32k模型为例（代码将会根据[model2path.json](config/model2path.json)中的路径自动下载HuggingFace模型，你可以修改此文件中的路径以从本地载入模型参数）：
 ```bash
 CUDA_VISIBLE_DEVICES=0 python pred.py --model chatglm3-6b-32k
 ```
