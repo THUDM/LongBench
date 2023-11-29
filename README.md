@@ -124,7 +124,7 @@ All data in **LongBench** (LongBench-E) are standardized to the following format
 #### Evaluation
 Install the requirements with pip: `pip install -r requirements.txt`. For Llama-2 based models, we recommend using Flash Attention for optimization and saving GPU memory The relevant dependencies can be installed according to the code base of [Flash Attention](https://github.com/Dao-AILab/flash-attention).
 
-First, run [pred.py](pred.py) and select the model you want to evaluate via `--model`. Let's take ChatGLM2-6B-32k as an example (HuggingFace model weight will be downloaded automatically according to the path in [model2path.json](config/model2path.json), you can change the path in this file to load the model weight from local):
+First, run [pred.py](pred.py) and select the model you want to evaluate via `--model`. Let's take ChatGLM3-6B-32k as an example (HuggingFace model weight will be downloaded automatically according to the path in [model2path.json](config/model2path.json), you can change the path in this file to load the model weight from local):
 ```bash
 CUDA_VISIBLE_DEVICES=0 python pred.py --model chatglm3-6b-32k
 ```
