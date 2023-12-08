@@ -8,6 +8,8 @@ import numpy as np
 import random
 import argparse
 from llama_flash_attn_monkey_patch import replace_llama_attn_with_flash_attn
+import torch.distributed as dist
+import torch.multiprocessing as mp
 
 def parse_args(args=None):
     parser = argparse.ArgumentParser()
@@ -46,8 +48,9 @@ def post_process(response, model_name):
         response = response.split("<eoa>")[0]
     return response
 
-def get_pred(model, tokenizer, data, max_length, max_gen, prompt_format, dataset, device, model_name):
-    preds = []
+def get_pred(rank, world_size, data, max_length, max_gen, prompt_format, dataset, device, model_name, model2path, out_path):
+    device = torch.device(f'cuda:{rank}')
+    model, tokenizer = load_model_and_tokenizer(model2path[model_name], model_name, device)
     for json_obj in tqdm(data):
         prompt = prompt_format.format(**json_obj)
         # truncate to fit max_length (we suggest truncate in the middle, since the left and right side may contain crucial instructions)
@@ -84,8 +87,10 @@ def get_pred(model, tokenizer, data, max_length, max_gen, prompt_format, dataset
             )[0]
         pred = tokenizer.decode(output[context_length:], skip_special_tokens=True)
         pred = post_process(pred, model_name)
-        preds.append({"pred": pred, "answers": json_obj["answers"], "all_classes": json_obj["all_classes"], "length": json_obj["length"]})
-    return preds
+        with open(out_path, "a", encoding="utf-8") as f:
+            json.dump({"pred": pred, "answers": json_obj["answers"], "all_classes": json_obj["all_classes"], "length": json_obj["length"]}, f, ensure_ascii=False)
+            f.write('\n')
+    dist.destroy_process_group()
 
 def seed_everything(seed):
     torch.manual_seed(seed)
@@ -124,12 +129,14 @@ def load_model_and_tokenizer(path, model_name, device):
 if __name__ == '__main__':
     seed_everything(42)
     args = parse_args()
+    world_size = torch.cuda.device_count()
+    mp.set_start_method('spawn', force=True)
+
     model2path = json.load(open("config/model2path.json", "r"))
     model2maxlen = json.load(open("config/model2maxlen.json", "r"))
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model_name = args.model
     # define your model
-    model, tokenizer = load_model_and_tokenizer(model2path[model_name], model_name, device)
     max_length = model2maxlen[model_name]
     if args.e:
         datasets = ["qasper", "multifieldqa_en", "hotpotqa", "2wikimqa", "gov_report", "multi_news", \
@@ -159,8 +166,13 @@ if __name__ == '__main__':
             out_path = f"pred/{model_name}/{dataset}.jsonl"
         prompt_format = dataset2prompt[dataset]
         max_gen = dataset2maxlen[dataset]
-        preds = get_pred(model, tokenizer, data, max_length, max_gen, prompt_format, dataset, device, model_name)
-        with open(out_path, "w", encoding="utf-8") as f:
-            for pred in preds:
-                json.dump(pred, f, ensure_ascii=False)
-                f.write('\n')
+        data_all = [data_sample for data_sample in data]
+        data_subsets = [data_all[i::world_size] for i in range(world_size)]
+        processes = []
+        for rank in range(world_size):
+            p = mp.Process(target=get_pred, args=(rank, world_size, data_subsets[rank], max_length, \
+                        max_gen, prompt_format, dataset, device, model_name, model2path, out_path))
+            p.start()
+            processes.append(p)
+        for p in processes:
+            p.join()
