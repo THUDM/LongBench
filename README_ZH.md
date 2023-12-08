@@ -125,6 +125,10 @@ for dataset in datasets:
 ```bash
 CUDA_VISIBLE_DEVICES=0 python pred.py --model chatglm3-6b-32k
 ```
+也可以同时在单机多卡上并行地进行推理（每个卡上有一个模型副本）：
+```bash
+CUDA_VISIBLE_DEVICES=0,1,2,3 python pred.py --model chatglm3-6b-32k
+```
 可以在`pred/`对应模型名称的文件夹下得到模型在LongBench所有数据集下的输出，类似地，通过`--e`命令：
 ```bash
 CUDA_VISIBLE_DEVICES=0 python pred.py --model chatglm3-6b-32k --e

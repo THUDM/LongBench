@@ -128,6 +128,10 @@ First, run [pred.py](pred.py) and select the model you want to evaluate via `--m
 ```bash
 CUDA_VISIBLE_DEVICES=0 python pred.py --model chatglm3-6b-32k
 ```
+You can also run inference on multi-gpus in parallel (one model per gpu):
+```bash
+CUDA_VISIBLE_DEVICES=0,1,2,3 python pred.py --model chatglm3-6b-32k
+```
 You can obtain the output of the model under all LongBench datasets under the `pred/` folder corresponding to the model name. Similarly, with the `--e` command:
 ```bash
 CUDA_VISIBLE_DEVICES=0 python pred.py --model chatglm3-6b-32k --e
