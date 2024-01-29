@@ -131,6 +131,7 @@ if __name__ == '__main__':
     args = parse_args()
     world_size = torch.cuda.device_count()
     mp.set_start_method('spawn', force=True)
+    torch.autograd.set_grad_enabled(False)
 
     model2path = json.load(open("config/model2path.json", "r"))
     model2maxlen = json.load(open("config/model2maxlen.json", "r"))
