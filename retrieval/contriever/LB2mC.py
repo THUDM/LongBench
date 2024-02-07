@@ -37,7 +37,7 @@ def process_jsonl_file(input_file, output_folder, chunk_size=100, filename='Unkn
             for i, chunk in enumerate(chunks):
                 output_datum = {
                     'id': data['_id'] + '_' + str(i),
-                    'text': chunk,
+                    'text': chunk.strip(),
                     'title': ''
                 }
                 output_data.append(output_datum)
