@@ -63,7 +63,10 @@ def get_pred(rank, world_size, data, max_length, max_gen, prompt_format, dataset
         if dataset not in ["trec", "triviaqa", "samsum", "lsht", "lcc", "repobench-p"]: # chat models are better off without build prompts on these tasks
             prompt = build_chat(tokenizer, prompt, model_name)
         if "chatglm3" in model_name:
-            input = prompt.to(device)
+            if dataset in ["trec", "triviaqa", "samsum", "lsht", "lcc", "repobench-p"]:
+                input = tokenizer(prompt, truncation=False, return_tensors="pt").to(device)
+            else:
+                input = prompt.to(device)
         else:
             input = tokenizer(prompt, truncation=False, return_tensors="pt").to(device)
         context_length = input.input_ids.shape[-1]
