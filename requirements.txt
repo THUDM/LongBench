@@ -4,5 +4,9 @@ rouge
 jieba
 fuzzywuzzy
 torch
-transformers==4.31.0
+transformers  #==4.31.0
 einops
+
+sentencepiece
+tiktoken
+flash_attn

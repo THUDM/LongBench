@@ -13,7 +13,7 @@ import torch.multiprocessing as mp
 
 def parse_args(args=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model', type=str, default=None, choices=["llama2-7b-chat-4k", "longchat-v1.5-7b-32k", "xgen-7b-8k", "internlm-7b-8k", "chatglm2-6b", "chatglm2-6b-32k", "chatglm3-6b-32k", "vicuna-v1.5-7b-16k"])
+    parser.add_argument('--model', type=str, default=None, choices=["llama2-7b-chat-4k", "longchat-v1.5-7b-32k", "xgen-7b-8k", "internlm-7b-8k", "chatglm2-6b", "chatglm2-6b-32k", "chatglm3-6b-32k", "vicuna-v1.5-7b-16k", "llama3.1-8b-instruct", "baselineWithCuratedFTLongMSL8K", "baselineWithCuratedFTLongMSL8KCQ"])
     parser.add_argument('--e', action='store_true', help="Evaluate on LongBench-E")
     return parser.parse_args(args)
 
@@ -112,6 +112,9 @@ def load_model_and_tokenizer(path, model_name, device):
         replace_llama_attn_with_flash_attn()
         tokenizer = LlamaTokenizer.from_pretrained(path)
         model = LlamaForCausalLM.from_pretrained(path, torch_dtype=torch.bfloat16).to(device)
+    elif "llama3" in model_name or "baseline" in model_name:
+        tokenizer = AutoTokenizer.from_pretrained(path)
+        model = AutoModelForCausalLM.from_pretrained(path, torch_dtype=torch.bfloat16).to(device)
     elif "longchat" in model_name or "vicuna" in model_name:
         from fastchat.model import load_model
         replace_llama_attn_with_flash_attn()
