@@ -24,7 +24,7 @@ LongBench includes 14 English tasks, 5 Chinese tasks, and 2 code tasks, with the
 | Code Completion | - | - | 2 |
 
 ## 🔥 Updates
-**[2024/08/14]** Check out our new work that extends the maximum generation length of current LLMs to 10,000+ words: [LongWriter](https://arxiv.org/abs/2408.07055). Our code & models: https://github.com/THUDM/LongWriter.
+🔥🔥🔥 **[2024/09/10]** Check out our new work that extends the maximum generation length of current LLMs to 10,000+ words: [LongWriter](https://arxiv.org/abs/2408.07055). Our code & models: https://github.com/THUDM/LongWriter. Also check out [LongCite](https://arxiv.org/abs/2409.02897) that can generate fine-grained citations during generation for long context document QA. Code & models: https://github.com/THUDM/LongCite.
 
 **[2024/02/01]** Check out our new effort in Long context LLMs: [LongAlign](https://arxiv.org/abs/2401.18058). We explore the best recipe for long context alignment. We also propose [LongBench-Chat](https://github.com/THUDM/LongAlign), the first real-world long context evaluation benchmark (10k-100k input length). We also release an instruction-following dataset at [HF Dataset](https://huggingface.co/datasets/THUDM/LongAlign-10k), along with a suite of competitive long context LLMs trained with LongAlign!
 
