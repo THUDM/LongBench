@@ -5,7 +5,9 @@ __author__ = "Yongchang Hao"
 __email__ = "yongchanghao.w@gmail.com"
 __license__ = "MIT"
 
+import argparse
 import gc
+import json
 import logging
 import random
 import re
@@ -15,6 +17,7 @@ from collections import Counter
 import datasets
 import numpy as np
 import torch
+import transformers
 from tqdm.auto import tqdm
 
 TASK_TO_MAXLEN = {
@@ -662,3 +665,33 @@ __all__ = [
     "available_categories",
     "available_languages",
 ]
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model_name", type=str, required=True)
+    parser.add_argument("--task_name", type=str, required=True, choices=available_tasks())
+    parser.add_argument("--version_e", action="store_true")
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--num_samples", type=int, default=None)
+    parser.add_argument("--disable_tqdm", action="store_true")
+    parser.add_argument("--log_file", type=str, default=None)
+    args = parser.parse_args()
+
+    model = transformers.AutoModelForCausalLM.from_pretrained(args.model_name)
+    tokenizer = transformers.AutoTokenizer.from_pretrained(args.model_name)
+    results = evalute(
+        args.task_name,
+        model,
+        tokenizer,
+        version_e=args.version_e,
+        seed=args.seed,
+        num_samples=args.num_samples,
+        disable_tqdm=args.disable_tqdm,
+    )
+    score = results["mean"]
+    print(f"The score for {args.model_name} on {args.task_name} is {score:.2f}")
+    if args.log_file is not None:
+        with open(args.log_file, "w") as f:
+            json.dump(results, f, indent=4, ensure_ascii=False)
+        print(f"Results saved to {args.log_file}")
