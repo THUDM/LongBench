@@ -235,11 +235,18 @@ The following tables show the Zero-shot evaluation results (%) on all datasets, 
 <a name="citation"></a>
 ## 📝 Citation
 ```
-@article{bai2023longbench,
-  title={LongBench: A Bilingual, Multitask Benchmark for Long Context Understanding},
-  author={Bai, Yushi and Lv, Xin and Zhang, Jiajie and Lyu, Hongchang and Tang, Jiankai and Huang, Zhidian and Du, Zhengxiao and Liu, Xiao and Zeng, Aohan and Hou, Lei and Dong, Yuxiao and Tang, Jie and Li, Juanzi},
-  journal={arXiv preprint arXiv:2308.14508},
-  year={2023}
+@inproceedings{bai2024longbench,
+    title = "{L}ong{B}ench: A Bilingual, Multitask Benchmark for Long Context Understanding",
+    author = "Bai, Yushi and Lv, Xin  and Zhang, Jiajie  and Lyu, Hongchang  and
+      Tang, Jiankai  and Huang, Zhidian  and Du, Zhengxiao  and Liu, Xiao  and Zeng, Aohan  and Hou, Lei  and Dong, Yuxiao  and Tang, Jie  and Li, Juanzi",
+    booktitle = "Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)",
+    month = aug,
+    year = "2024",
+    address = "Bangkok, Thailand",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2024.acl-long.172",
+    doi = "10.18653/v1/2024.acl-long.172",
+    pages = "3119--3137",
 }
 ```
 When citing our work, please kindly consider citing the original dataset papers. The relevant citation information is listed [here](refs/ref.bib).
