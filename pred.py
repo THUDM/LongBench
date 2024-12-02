@@ -130,7 +130,7 @@ def load_model_and_tokenizer(path, model_name, device):
         model = model.bfloat16()
         tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=True, use_fast=False)
     else:
-        model = AutoModelForCausalLM.from_pretrained(path, torch_dtype=torch.bfloat16, attn_implementation="flash_attention").to(device)
+        model = AutoModelForCausalLM.from_pretrained(path, torch_dtype=torch.bfloat16, attn_implementation="flash_attention_2").to(device)
         tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=True)
     model = model.eval()
     return model, tokenizer
@@ -147,8 +147,8 @@ if __name__ == '__main__':
     model_name = args.model
     # define your model
     # max_length = model2maxlen[model_name]
-    from transformers import AutoModelConfig
-    config = AutoModelConfig.from_pretrained(model_name)
+    from transformers import AutoConfig
+    config = AutoConfig.from_pretrained(model_name)
     max_length = config.max_position_embeddings - 520
     if args.e:
         datasets = ["qasper", "multifieldqa_en", "hotpotqa", "2wikimqa", "gov_report", "multi_news", \
@@ -173,15 +173,15 @@ if __name__ == '__main__':
     for dataset in datasets:
         if args.e:
             data = load_dataset('THUDM/LongBench', f"{dataset}_e", split='test')
-            if not os.path.exists(f"{output_dir}/pred_e/{model_name}"):
-                os.makedirs(f"{output_dir}/pred_e/{model_name}")
+            if not os.path.exists(f"{output_dir}/pred_e/{os.path.basename(model_name)}"):
+                os.makedirs(f"{output_dir}/pred_e/{os.path.basename(model_name)}")
             # out_path = f"pred_e/{model_name}/{dataset}.jsonl"
-            out_path = f"{output_dir}/pred_e/{model_name}/{dataset}.jsonl"
+            out_path = f"{output_dir}/pred_e/{os.path.basename(model_name)}/{dataset}.jsonl"
         else:
             data = load_dataset('THUDM/LongBench', dataset, split='test')
-            if not os.path.exists(f"{output_dir}/pred/{model_name}"):
-                os.makedirs(f"{output_dir}/pred/{model_name}")
-            out_path = f"{output_dir}/pred/{model_name}/{dataset}.jsonl"
+            if not os.path.exists(f"{output_dir}/pred/{os.path.basename(model_name)}"):
+                os.makedirs(f"{output_dir}/pred/{os.path.basename(model_name)}")
+            out_path = f"{output_dir}/pred/{os.path.basename(model_name)}/{dataset}.jsonl"
         prompt_format = dataset2prompt[dataset]
         max_gen = dataset2maxlen[dataset]
         data_all = [data_sample for data_sample in data]
