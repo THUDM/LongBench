@@ -94,7 +94,7 @@ def get_pred(rank, world_size, data, max_length, max_gen, prompt_format, dataset
         pred = tokenizer.decode(output[context_length:], skip_special_tokens=True)
         pred = post_process(pred, model_name)
         with open(out_path, "a", encoding="utf-8") as f:
-            json.dump({"pred": pred, "answers": json_obj["answers"], "all_classes": json_obj["all_classes"], "length": json_obj["length"]}, f, ensure_ascii=False)
+            json.dump({"pred": pred, "answers": json_obj["answers"], "question":json_obj['input'], "all_classes": json_obj["all_classes"], "length": json_obj["length"]}, f, ensure_ascii=False)
             f.write('\n')
     dist.destroy_process_group()
 
@@ -130,7 +130,7 @@ def load_model_and_tokenizer(path, model_name, device):
         model = model.bfloat16()
         tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=True, use_fast=False)
     else:
-        model = AutoModelForCausalLM.from_pretrained(path, torch_dtype=torch.bfloat16, attn_implementation="flash_attention_2").to(device)
+        model = AutoModelForCausalLM.from_pretrained(path, torch_dtype=torch.bfloat16, attn_implementation="flash_attention_2", trust_remote_code=True).to(device)
         tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=True)
     model = model.eval()
     return model, tokenizer
@@ -150,6 +150,7 @@ if __name__ == '__main__':
     from transformers import AutoConfig
     config = AutoConfig.from_pretrained(model_name)
     max_length = config.max_position_embeddings - 520
+    # max_length = 128*1024 - 520
     if args.e:
         datasets = ["qasper", "multifieldqa_en", "hotpotqa", "2wikimqa", "gov_report", "multi_news", \
             "trec", "triviaqa", "samsum", "passage_count", "passage_retrieval_en", "lcc", "repobench-p"]

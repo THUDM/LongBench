@@ -39,5 +39,7 @@ pip install omegaconf
 pip install pytorch-lightning 
 pip install numpy==1.23.5 --no-deps
 pip install huggingface_hub==0.23.2 --no-deps
+pip install fuzzywuzzy
+pip install rouge
 echo "Installation complete."
 export only_last_logits=1
