@@ -13,8 +13,10 @@ import torch.multiprocessing as mp
 
 def parse_args(args=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model', type=str, default=None, choices=["llama2-7b-chat-4k", "longchat-v1.5-7b-32k", "xgen-7b-8k", "internlm-7b-8k", "chatglm2-6b", "chatglm2-6b-32k", "chatglm3-6b-32k", "vicuna-v1.5-7b-16k"])
+    # parser.add_argument('--model', type=str, default=None, choices=["llama2-7b-chat-4k", "longchat-v1.5-7b-32k", "xgen-7b-8k", "internlm-7b-8k", "chatglm2-6b", "chatglm2-6b-32k", "chatglm3-6b-32k", "vicuna-v1.5-7b-16k"])
+    parser.add_argument('--model', type=str, default=None)
     parser.add_argument('--e', action='store_true', help="Evaluate on LongBench-E")
+    parser.add_argument('--output_dir', type=str, default=".")
     return parser.parse_args(args)
 
 # This is the customized building prompt for chat models
@@ -50,7 +52,8 @@ def post_process(response, model_name):
 
 def get_pred(rank, world_size, data, max_length, max_gen, prompt_format, dataset, device, model_name, model2path, out_path):
     device = torch.device(f'cuda:{rank}')
-    model, tokenizer = load_model_and_tokenizer(model2path[model_name], model_name, device)
+    # model, tokenizer = load_model_and_tokenizer(model2path[model_name], model_name, device)
+    model, tokenizer = load_model_and_tokenizer(model_name, "model_name",device)
     for json_obj in tqdm(data):
         prompt = prompt_format.format(**json_obj)
         # truncate to fit max_length (we suggest truncate in the middle, since the left and right side may contain crucial instructions)
@@ -126,6 +129,9 @@ def load_model_and_tokenizer(path, model_name, device):
         model = model.to(device)
         model = model.bfloat16()
         tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=True, use_fast=False)
+    else:
+        model = AutoModelForCausalLM.from_pretrained(path, torch_dtype=torch.bfloat16, attn_implementation="flash_attention").to(device)
+        tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=True)
     model = model.eval()
     return model, tokenizer
 
@@ -140,14 +146,18 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model_name = args.model
     # define your model
-    max_length = model2maxlen[model_name]
+    # max_length = model2maxlen[model_name]
+    from transformers import AutoModelConfig
+    config = AutoModelConfig.from_pretrained(model_name)
+    max_length = config.max_position_embeddings - 520
     if args.e:
         datasets = ["qasper", "multifieldqa_en", "hotpotqa", "2wikimqa", "gov_report", "multi_news", \
             "trec", "triviaqa", "samsum", "passage_count", "passage_retrieval_en", "lcc", "repobench-p"]
     else:
-        datasets = ["narrativeqa", "qasper", "multifieldqa_en", "multifieldqa_zh", "hotpotqa", "2wikimqa", "musique", \
-                    "dureader", "gov_report", "qmsum", "multi_news", "vcsum", "trec", "triviaqa", "samsum", "lsht", \
-                    "passage_count", "passage_retrieval_en", "passage_retrieval_zh", "lcc", "repobench-p"]
+        # datasets = ["narrativeqa", "qasper", "multifieldqa_en", "multifieldqa_zh", "hotpotqa", "2wikimqa", "musique", \
+        #             "dureader", "gov_report", "qmsum", "multi_news", "vcsum", "trec", "triviaqa", "samsum", "lsht", \
+        #             "passage_count", "passage_retrieval_en", "passage_retrieval_zh", "lcc", "repobench-p"]
+        datasets = ["narrativeqa", "qasper", "multifieldqa_en", "hotpotqa", "2wikimqa", "musique",]
     # we design specific prompt format and max generation length for each task, feel free to modify them to optimize model output
     dataset2prompt = json.load(open("config/dataset2prompt.json", "r"))
     dataset2maxlen = json.load(open("config/dataset2maxlen.json", "r"))
@@ -156,17 +166,22 @@ if __name__ == '__main__':
         os.makedirs("pred")
     if not os.path.exists("pred_e"):
         os.makedirs("pred_e")
+    output_dir = args.output_dir
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
     for dataset in datasets:
         if args.e:
             data = load_dataset('THUDM/LongBench', f"{dataset}_e", split='test')
-            if not os.path.exists(f"pred_e/{model_name}"):
-                os.makedirs(f"pred_e/{model_name}")
-            out_path = f"pred_e/{model_name}/{dataset}.jsonl"
+            if not os.path.exists(f"{output_dir}/pred_e/{model_name}"):
+                os.makedirs(f"{output_dir}/pred_e/{model_name}")
+            # out_path = f"pred_e/{model_name}/{dataset}.jsonl"
+            out_path = f"{output_dir}/pred_e/{model_name}/{dataset}.jsonl"
         else:
             data = load_dataset('THUDM/LongBench', dataset, split='test')
-            if not os.path.exists(f"pred/{model_name}"):
-                os.makedirs(f"pred/{model_name}")
-            out_path = f"pred/{model_name}/{dataset}.jsonl"
+            if not os.path.exists(f"{output_dir}/pred/{model_name}"):
+                os.makedirs(f"{output_dir}/pred/{model_name}")
+            out_path = f"{output_dir}/pred/{model_name}/{dataset}.jsonl"
         prompt_format = dataset2prompt[dataset]
         max_gen = dataset2maxlen[dataset]
         data_all = [data_sample for data_sample in data]
