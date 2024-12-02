@@ -42,7 +42,7 @@ dataset2metric = {
 def parse_args(args=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str, default=None)
-    parser.add_argument('--output_dir', type=str, help="Output directory")
+    parser.add_argument('--output_dir', type=str, help="Output directory", default='.')
     parser.add_argument('--e', action='store_true', help="Evaluate on LongBench-E")
     return parser.parse_args(args)
 

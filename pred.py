@@ -53,7 +53,7 @@ def post_process(response, model_name):
 def get_pred(rank, world_size, data, max_length, max_gen, prompt_format, dataset, device, model_name, model2path, out_path):
     device = torch.device(f'cuda:{rank}')
     # model, tokenizer = load_model_and_tokenizer(model2path[model_name], model_name, device)
-    model, tokenizer = load_model_and_tokenizer(model_name, "model_name",device)
+    model, tokenizer = load_model_and_tokenizer(model_name, os.path.basename(model_name).lower(), device)
     for json_obj in tqdm(data):
         prompt = prompt_format.format(**json_obj)
         # truncate to fit max_length (we suggest truncate in the middle, since the left and right side may contain crucial instructions)
@@ -149,7 +149,8 @@ if __name__ == '__main__':
     # max_length = model2maxlen[model_name]
     from transformers import AutoConfig
     config = AutoConfig.from_pretrained(model_name)
-    max_length = config.max_position_embeddings - 520
+    # max_length = config.max_position_embeddings - 520
+    max_length = 3500
     # max_length = 128*1024 - 520
     if args.e:
         datasets = ["qasper", "multifieldqa_en", "hotpotqa", "2wikimqa", "gov_report", "multi_news", \
