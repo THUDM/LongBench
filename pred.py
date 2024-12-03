@@ -149,8 +149,8 @@ if __name__ == '__main__':
     # max_length = model2maxlen[model_name]
     from transformers import AutoConfig
     config = AutoConfig.from_pretrained(model_name)
-    # max_length = config.max_position_embeddings - 520
-    max_length = 3500
+    max_length = config.max_position_embeddings - 520
+    # max_length = 3500
     # max_length = 128*1024 - 520
     if args.e:
         datasets = ["qasper", "multifieldqa_en", "hotpotqa", "2wikimqa", "gov_report", "multi_news", \
