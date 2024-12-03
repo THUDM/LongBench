@@ -106,5 +106,6 @@ if __name__ == '__main__':
         out_path = f"{args.output_dir}/pred_e/{os.path.basename(args.model)}/result.json"
     else:
         out_path = f"{args.output_dir}/pred/{os.path.basename(args.model)}/result.json"
+    print("Scores:", scores)
     with open(out_path, "w") as f:
         json.dump(scores, f, ensure_ascii=False, indent=4)
