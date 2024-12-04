@@ -148,7 +148,7 @@ if __name__ == '__main__':
     # define your model
     # max_length = model2maxlen[model_name]
     from transformers import AutoConfig
-    config = AutoConfig.from_pretrained(model_name)
+    config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
     max_length = config.max_position_embeddings - 520
     # max_length = 3500
     # max_length = 128*1024 - 520
