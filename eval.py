@@ -75,6 +75,11 @@ def scorer(dataset, predictions, answers, all_classes):
         total_score += score
     return round(100 * total_score / len(predictions), 2)
 
+def reorder_scores(scores, datasets):
+    # reorder the scores to match the order of input datasets
+    reordered_scores = {task: scores.get(task, "N/A") for task in datasets}
+    return reordered_scores
+
 if __name__ == '__main__':
     args = parse_args()
     scores = dict()
@@ -106,6 +111,15 @@ if __name__ == '__main__':
         out_path = f"{args.output_dir}/pred_e/{os.path.basename(args.model)}/result.json"
     else:
         out_path = f"{args.output_dir}/pred/{os.path.basename(args.model)}/result.json"
-    print("Scores:", scores)
+    if args.e:
+        ordered_datasets = ["qasper", "multifieldqa_en", "hotpotqa", "2wikimqa", "gov_report", "multi_news", \
+            "trec", "triviaqa", "samsum", "passage_count", "passage_retrieval_en", "lcc", "repobench-p"]
+    else:
+        ordered_datasets = ["narrativeqa", "qasper", "multifieldqa_en", "multifieldqa_zh", "hotpotqa", "2wikimqa", "musique", \
+                    "dureader", "gov_report", "qmsum", "multi_news", "vcsum", "trec", "triviaqa", "samsum", "lsht", \
+                    "passage_count", "passage_retrieval_en", "passage_retrieval_zh", "lcc", "repobench-p"]
+    scores = reorder_scores(scores, ordered_datasets)
+    print(', '.join(list(scores.keys())))
+    print(list(scores.values()))
     with open(out_path, "w") as f:
         json.dump(scores, f, ensure_ascii=False, indent=4)
