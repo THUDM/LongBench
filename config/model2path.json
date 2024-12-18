@@ -1,10 +1,13 @@
 {
-    "llama2-7b-chat-4k": "meta-llama/Llama-2-7b-chat-hf",
-    "longchat-v1.5-7b-32k": "lmsys/longchat-7b-v1.5-32k",
-    "xgen-7b-8k": "Salesforce/xgen-7b-8k-inst",
-    "internlm-7b-8k": "internlm/internlm-chat-7b-8k",
-    "chatglm2-6b": "THUDM/chatglm2-6b",
-    "chatglm2-6b-32k": "THUDM/chatglm2-6b-32k",
-    "chatglm3-6b-32k": "THUDM/chatglm3-6b-32k",
-    "vicuna-v1.5-7b-16k": "lmsys/vicuna-7b-v1.5-16k"
+    "GLM-4-9B-Chat": "THUDM/glm-4-9b-chat",
+    "Llama-3.1-8B-Instruct": "meta-llama/Llama-3.1-8B-Instruct", 
+    "Llama-3.1-70B-Instruct": "meta-llama/Llama-3.1-70B-Instruct",
+    "Llama-3.3-70B-Instruct": "meta-llama/Llama-3.3-70B-Instruct",
+    "Llama-3.1-Nemotron-70B-Instruct": "nvidia/Llama-3.1-Nemotron-70B-Instruct-HF",
+    "Qwen2.5-7B-Instruct": "Qwen/Qwen2.5-7B-Instruct",
+    "Qwen2.5-72B-Instruct": "Qwen/Qwen2.5-72B-Instruct",
+    "Mistral-Large-Instruct-2407": "mistralai/Mistral-Large-Instruct-2407",
+    "Mistral-Large-Instruct-2411": "mistralai/Mistral-Large-Instruct-2411",
+    "c4ai-command-r-plus-08-2024": "CohereForAI/c4ai-command-r-plus-08-2024",
+    "glm-4-plus": "THUDM/glm-4-9b-chat"
 }

@@ -1,0 +1,14 @@
+Please read the following text and answer the questions below.
+
+The text is too long and omitted here.
+
+What is the correct answer to this question: $Q$
+Choices:
+(A) $C_A$
+(B) $C_B$
+(C) $C_C$
+(D) $C_D$
+
+Let’s think step by step: $COT$
+
+Based on the above, what is the single, most likely answer choice? Format your response as follows: "The correct answer is (insert answer here)".
