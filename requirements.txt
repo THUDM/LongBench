@@ -1,8 +1,2 @@
-datasets
-tqdm
-rouge
-jieba
-fuzzywuzzy
-torch
-transformers==4.31.0
-einops
+vllm==0.5.3.post1
+transformers==4.45.0

@@ -1,0 +1,8 @@
+What is the correct answer to this question: $Q$
+Choices:
+(A) $C_A$
+(B) $C_B$
+(C) $C_C$
+(D) $C_D$
+
+What is the single, most likely answer choice? Format your response as follows: "The correct answer is (insert answer here)".
