@@ -26,7 +26,7 @@ for file in files:
         if pred['length'] == "short":
             short += 1
             short_acc += acc
-        elif pred['length'] == "short":
+        elif pred['length'] == "medium":
             medium += 1
             medium_acc += acc
         else:
