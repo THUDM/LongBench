@@ -24,6 +24,8 @@ To elaborate, LongBench v2 consists of 503 challenging multiple-choice questions
 </div>
 
 ## 🔥 Updates
+🔥🔥🔥 **[2024/01/15]** More evaluation results added to our [leaderboard](https://longbench2.github.io/#leaderboard), including Gemini-Exp-1206, Gemini-2.0-Flash, DeepSeek-V3, and MiniMax-Text-01, Check them out!
+
 🔥🔥🔥 **[2024/12/20]** We are excited to release **LongBench v2**! Compared to the first generation of LongBench, LongBench v2 is much longer and much more challenging. Its goal is to provide a reliable evaluation standard for the development of future superhuman long-context AI systems.
 
 ## ⚙️ How to evaluate on LongBench v2
