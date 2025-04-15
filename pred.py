@@ -138,14 +138,17 @@ def main():
         if item["_id"] not in has_data:
             data.append(item)
 
-    data_subsets = [data[i::args.n_proc] for i in range(args.n_proc)]
-    processes = []
-    for rank in range(args.n_proc):
-        p = mp.Process(target=get_pred, args=(data_subsets[rank], args, fout))
-        p.start()
-        processes.append(p)
-    for p in processes:
-        p.join()
+    if args.n_proc == 1:
+        get_pred(data, args, fout)
+    else:
+        data_subsets = [data[i::args.n_proc] for i in range(args.n_proc)]
+        processes = []
+        for rank in range(args.n_proc):
+            p = mp.Process(target=get_pred, args=(data_subsets[rank], args, fout))
+            p.start()
+            processes.append(p)
+        for p in processes:
+            p.join()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
