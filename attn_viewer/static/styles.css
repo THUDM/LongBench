@@ -145,9 +145,10 @@ button {
 
 .main-panel {
   display: grid;
-  grid-template-rows: auto auto 1fr;
+  grid-template-rows: minmax(420px, 72vh) auto 1fr;
   gap: 18px;
   padding: 18px;
+  min-width: 0;
 }
 
 .viewer-band {
@@ -155,6 +156,13 @@ button {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 16px;
+  min-width: 0;
+}
+
+.heatmap-band {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .section-head {
@@ -168,14 +176,23 @@ button {
 .canvas-wrap {
   border: 1px solid var(--line);
   background: var(--panel-muted);
-  overflow: auto;
-  max-height: 72vh;
+  overflow: hidden;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
 }
 
 #heatmapCanvas {
   display: block;
-  margin: 0 auto;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
   background: #ffffff;
+  image-rendering: pixelated;
 }
 
 .prompt-text {
@@ -250,6 +267,6 @@ button {
   }
 
   .main-panel {
-    grid-template-rows: auto;
+    grid-template-rows: minmax(320px, 60vh) auto auto;
   }
 }
