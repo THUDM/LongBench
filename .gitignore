@@ -46,3 +46,8 @@ weights/
 *.swo
 .DS_Store
 Thumbs.db
+
+*.jsonl
+*.json
+*.out
+*.txt
