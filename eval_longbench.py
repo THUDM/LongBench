@@ -14,7 +14,7 @@ from attn_heatmap import (
     get_full_attention_layer_indices,
     is_qwen_attn_heatmap_model,
 )
-from pred_misc import (
+from misc import (
     build_output_path,
     load_json,
     load_longbench_v2,
