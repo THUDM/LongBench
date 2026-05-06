@@ -24,7 +24,150 @@ from datetime import datetime, timezone
 import time
 import torch
 
+from models.compression.monkeypatch import replace_qwen3_5
+
 scorer = rouge_scorer.RougeScorer(['rouge1', 'rougeL'], use_stemmer=True)
+LOCAL_MODEL_PROVIDERS = ["LLaMA3", "Mistral", "Qwen", "Qwen3.5", "HF"]
+
+
+def build_compression_config(compression_mode, compression_budget):
+    return {
+        "method": compression_mode,
+        "method_config": {
+            "budget": compression_budget,
+            "window_size": 8,
+            "mix_lambda": 0.07,
+            "retain_ratio": 0.2,
+            "retain_direction": "last",
+            "first_tokens": 4,
+        },
+        "compression": None,
+        "update_kv": True,
+    }
+
+
+def apply_qwen3_5_compression_setup(model, tokenizer, compression_mode):
+    model.config.update(
+        {
+            "divide_method": "step_length",
+            "divide_length": 128,
+            "compression_content": "think",
+            "method": compression_mode,
+        }
+    )
+    model.newline_token_ids = [
+        tokenizer.encode(text, add_special_tokens=False)[-1]
+        for text in ["\n", ".\n", ")\n", "\n\n", ".\n\n", ")\n\n"]
+    ]
+    model.after_think_token_ids = [tokenizer.encode("</think>", add_special_tokens=False)[-1]]
+
+
+def load_model_and_tokenizer(
+    model_path,
+    attn_implementation="flash_attention_2",
+    use_fast_tokenizer=True,
+    compression=False,
+    compression_mode=None,
+    compression_budget=4096,
+):
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_path,
+        use_fast=use_fast_tokenizer,
+        padding_side="left",
+        trust_remote_code=True,
+    )
+    if tokenizer.pad_token_id is None and tokenizer.eos_token_id is not None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    model_kwargs = {
+        "trust_remote_code": True,
+        "low_cpu_mem_usage": True,
+        "device_map": "auto",
+        "attn_implementation": attn_implementation,
+    }
+    if torch.cuda.is_available():
+        model_kwargs["torch_dtype"] = torch.bfloat16
+    else:
+        model_kwargs["torch_dtype"] = torch.float32
+
+    model_path_lower = model_path.lower()
+    if compression:
+        if not compression_mode:
+            raise ValueError("Please provide --compression_mode when --compression is enabled.")
+        if "qwen3.5" not in model_path_lower:
+            raise ValueError(
+                f"Compression currently supports only qwen3.5 models, got: {model_path}"
+            )
+
+        replace_qwen3_5(build_compression_config(compression_mode, compression_budget))
+        model = AutoModelForCausalLM.from_pretrained(model_path, **model_kwargs)
+        apply_qwen3_5_compression_setup(model, tokenizer, compression_mode)
+    elif "qwen3.5" in model_path_lower:
+        from models.qwen3_5.configuration_qwen3_5 import Qwen3_5Config
+        from models.qwen3_5.modeling_qwen3_5 import Qwen3_5ForConditionalGeneration
+
+        config = Qwen3_5Config.from_pretrained(model_path)
+        model = Qwen3_5ForConditionalGeneration.from_pretrained(
+            model_path,
+            config=config,
+            **model_kwargs,
+        )
+    else:
+        model = AutoModelForCausalLM.from_pretrained(model_path, **model_kwargs)
+
+    model.eval()
+    return model, tokenizer
+
+
+def get_input_device(model):
+    try:
+        return next(model.parameters()).device
+    except StopIteration:
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def build_inputs(prompt, tokenizer, device, enable_thinking=False):
+    messages = [{"role": "user", "content": prompt}]
+    if getattr(tokenizer, "chat_template", None):
+        try:
+            inputs = tokenizer.apply_chat_template(
+                messages,
+                add_generation_prompt=True,
+                return_tensors="pt",
+                return_dict=True,
+                enable_thinking=enable_thinking,
+            )
+        except TypeError:
+            try:
+                input_ids = tokenizer.apply_chat_template(
+                    messages,
+                    add_generation_prompt=True,
+                    return_tensors="pt",
+                    enable_thinking=enable_thinking,
+                )
+            except TypeError:
+                input_ids = tokenizer.apply_chat_template(
+                    messages,
+                    add_generation_prompt=True,
+                    return_tensors="pt",
+                )
+            inputs = input_ids if isinstance(input_ids, dict) else {"input_ids": input_ids}
+    else:
+        inputs = tokenizer(prompt, return_tensors="pt")
+
+    inputs = dict(inputs)
+    if "attention_mask" not in inputs:
+        inputs["attention_mask"] = torch.ones_like(inputs["input_ids"])
+    return {k: v.to(device) for k, v in inputs.items()}
+
+
+def validate_args(args):
+    if not args.model_name:
+        raise ValueError("--model_name is required.")
+    if args.compression and not args.compression_mode:
+        raise ValueError("--compression requires --compression_mode.")
+    if args.compression and args.compression_budget < 1:
+        raise ValueError("--compression_budget must be at least 1 when compression is enabled.")
 
 class LLMNeedleHaystackTester:
     """
@@ -57,10 +200,11 @@ class LLMNeedleHaystackTester:
                  seconds_to_sleep_between_completions = None,
                  print_ongoing_status = True,
                  step=100,
-                 method='pyramidkv',
                  attn_implementation='flash_attention_2',
-                 use_pyramid=False,
-                 max_capacity_prompt=128):
+                 compression=False,
+                 compression_mode=None,
+                 compression_budget=4096,
+                 enable_thinking=False):
         """
         :param needle: The needle to be found in the haystack. Default is None.
         :param haystack_dir: The directory of text files to use as background context (or a haystack) in which the needle is to be found. Default is Paul Graham Essays.
@@ -102,13 +246,17 @@ class LLMNeedleHaystackTester:
         self.model_provider = model_provider
         self.testing_results = []
         self.step = step
-        self.method = method
-        self.max_capacity_prompts = max_capacity_prompt
         self.attn_implementation = attn_implementation
+        self.compression = compression
+        self.compression_mode = compression_mode
+        self.compression_budget = compression_budget
+        self.enable_thinking = enable_thinking
 
 
-        self.model_version = model_version
+        self.model_version = model_version or os.path.basename(model_name.rstrip("/"))
         if(model_name_suffix is not None): self.model_version += "_" + model_name_suffix
+        if compression:
+            self.model_version += f"_{compression_mode}_{compression_budget}"
 
         if context_lengths is None:
             if context_lengths_min is None or context_lengths_max is None or context_lengths_num_intervals is None:
@@ -136,80 +284,17 @@ class LLMNeedleHaystackTester:
 
         self.model_name = model_name
 
-        if(self.model_provider in ["LLaMA3", "Mistral"]):
-            self.enc = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-            # self.enc.add_special_tokens({'pad_token': '[PAD]'})
-            print("loading from %s" % model_name)
+        if self.model_provider not in LOCAL_MODEL_PROVIDERS:
+            raise ValueError("model_provider must be one of 'LLaMA3', 'Mistral', 'Qwen', 'Qwen3.5', or 'HF'")
 
-
-            # if torch.cuda.device_count()>1:
-
-            from accelerate import init_empty_weights, load_checkpoint_and_dispatch
-            from transformers import AutoConfig
-
-
-            if self.method == 'full':
-                self.model_to_test=AutoModelForCausalLM.from_pretrained(
-                    model_name,
-                    torch_dtype=torch.float16,
-                    attn_implementation=self.attn_implementation,
-                    device_map="auto",
-                    low_cpu_mem_usage=True,
-                    # use_cache=False
-                    ).eval()
-
-
-            if self.method in ["pyramidkv", "snapkv","streamingllm","h2o","cam","restkv"]:
-
-                if self.model_provider == 'LLaMA3':
-                    replace_llama(self.method.lower())
-                elif self.model_provider == 'Mistral':
-                    replace_mistral(self.method.lower())
-
-                if self.max_capacity_prompts != -1:
-                    max_capacity_prompts = self.max_capacity_prompts
-
-                self.model_to_test=AutoModelForCausalLM.from_pretrained(
-                    model_name,
-                    torch_dtype=torch.float16,
-                    attn_implementation=self.attn_implementation,
-                    device_map="auto",
-                    low_cpu_mem_usage=True,
-                    # use_cache=False
-                    ).eval()
-
-
-                if self.method.lower() == "pyramidkv":
-                    window_sizes = 8
-                elif self.method.lower() in ["snapkv","streamingllm","h2o","cam","restkv"]:
-                    window_sizes = 32
-
-                layers = len(self.model_to_test.model.layers)
-                # check if window_sizes is a list
-                if not isinstance(window_sizes, list):
-                    window_sizes = [window_sizes] * layers
-                if not isinstance(max_capacity_prompts, list):
-                    max_capacity_prompts = [max_capacity_prompts] * layers
-                for i in range(layers):
-                    self.model_to_test.model.layers[i].self_attn.config.window_size = window_sizes[i]
-                    self.model_to_test.model.layers[i].self_attn.config.max_capacity_prompt = max_capacity_prompts[i]
-                    self.model_to_test.model.layers[i].self_attn.config.kernel_size = 5
-                    self.model_to_test.model.layers[i].self_attn.config.pooling = "avgpool"
-                    if args.method.lower() == "restkv":
-                        self.model_to_test.model.layers[i].self_attn.config.use_wo = True
-                        self.model_to_test.model.layers[i].self_attn.config.use_norm = False
-                        self.model_to_test.model.layers[i].self_attn.config.use_ema = True
-                        self.model_to_test.model.layers[i].self_attn.config.use_pyramid = use_pyramid
-                        self.model_to_test.model.layers[i].self_attn.config.alpha = 0.3
-                        self.model_to_test.model.layers[i].self_attn.config.metric_mode = 'after'
-                        self.model_to_test.model.layers[i].self_attn.config.tau = 1.0
-                        self.model_to_test.model.layers[i].self_attn.config.scale = 2000
-                        self.model_to_test.model.layers[i].self_attn.config.pooling = 'adaptive'
-
-
-                # self.model_to_test = tp.tensor_parallel(self.model_to_test, sharded=True)
-
-        else:raise ValueError("model_provider must be either 'LLaMA3' or 'Mistral'")
+        print("loading from %s" % model_name)
+        self.model_to_test, self.enc = load_model_and_tokenizer(
+            model_name,
+            attn_implementation=self.attn_implementation,
+            compression=self.compression,
+            compression_mode=self.compression_mode,
+            compression_budget=self.compression_budget,
+        )
 
 
     def logistic(self, x, L=100, x0=50, k=.1):
@@ -235,7 +320,7 @@ class LLMNeedleHaystackTester:
         # Generate the prompt for the Anthropic model
         # Replace the following line with the appropriate prompt structure
         if(self.model_provider not in ["OpenAI", "Anthropic"]):
-            test_format=f"<|im_start|> This is a very long story book: <book> {context} </book>.\n Based on the content of the book, Question: {self.retrieval_question}\nAnswer:"
+            test_format=f"This is a very long story book: <book> {context} </book>.\n Based on the content of the book, Question: {self.retrieval_question}\nAnswer:"
             return test_format
         else:
             return [
@@ -275,19 +360,32 @@ class LLMNeedleHaystackTester:
         prompt = self.generate_prompt(context)
         test_start_time = time.time()
 
-        if(self.model_provider in ["LLaMA3", "Mistral"]):
+        if(self.model_provider in LOCAL_MODEL_PROVIDERS):
 
-            prompt = self.enc(prompt, return_tensors="pt")
-            input_ids = prompt['input_ids'].to(self.model_to_test.device)
-
+            inputs = build_inputs(
+                prompt,
+                self.enc,
+                get_input_device(self.model_to_test),
+                enable_thinking=self.enable_thinking,
+            )
+            input_ids = inputs["input_ids"]
+            eos_token_ids = [
+                token_id
+                for token_id in [
+                    self.enc.eos_token_id,
+                    self.enc.encode("\n", add_special_tokens=False)[-1],
+                ]
+                if token_id is not None
+            ]
             output_ids = self.model_to_test.generate(
-                input_ids,
+                **inputs,
                 output_attentions=False,
                 max_new_tokens=30,
                 num_beams=1,
                 do_sample=False,
                 temperature=1.0,
-                eos_token_id=[self.enc.eos_token_id, self.enc.encode("\n", add_special_tokens=False)[-1]]
+                pad_token_id=self.enc.pad_token_id,
+                eos_token_id=eos_token_ids,
             )
             response = self.enc.decode(output_ids[0][input_ids.shape[1]:], skip_special_tokens=True).strip()
 
@@ -388,7 +486,7 @@ class LLMNeedleHaystackTester:
         return context
 
     def encode_text_to_tokens(self, text):
-        if self.model_provider in ["Mistral", "LLaMA3"]:
+        if self.model_provider in LOCAL_MODEL_PROVIDERS:
             return self.enc.encode(text, add_special_tokens=False)
         elif self.model_provider == "Anthropic":
             # Assuming you have a different encoder for Anthropic
@@ -438,7 +536,7 @@ class LLMNeedleHaystackTester:
         return new_context
 
     def get_context_length_in_tokens(self, context):
-        if self.model_provider in ["Mistral", "LLaMA3"]:
+        if self.model_provider in LOCAL_MODEL_PROVIDERS:
             return len(self.enc.encode(context, add_special_tokens=False))
         else:
             return len(self.enc.encode(context))
@@ -455,14 +553,14 @@ class LLMNeedleHaystackTester:
         return context
 
     def get_tokens_from_context(self, context):
-        if self.model_provider in ["Mistral", "LLaMA3"]:
+        if self.model_provider in LOCAL_MODEL_PROVIDERS:
             return self.enc.encode(context, add_special_tokens=False)
         else:
             return self.enc.encode(context)
             # raise ValueError("model_provider must be either 'OpenAI' or 'Anthropic'")
 
     def decode_tokens(self, tokens, context_length=None):
-        if self.model_provider in ["Mistral", "LLaMA3"]:
+        if self.model_provider in LOCAL_MODEL_PROVIDERS:
             return self.enc.decode(tokens[:context_length], skip_special_tokens=True)
         else:
             return self.enc.decode(tokens[:context_length])
@@ -499,18 +597,20 @@ if __name__ == "__main__":
     parser.add_argument('-s', '--s_len', metavar='N', type=int, help='a number')
     parser.add_argument('-e', '--e_len', metavar='N', type=int, help='a number')
     parser.add_argument('--model_name', type=str, default=None, help='name of model')
-    parser.add_argument("--attn_implementation", type=str,  default="flash_attention_2", choices=["flash_attention_2", "sdpa", "None"])
+    parser.add_argument("--attn_implementation", type=str,  default="flash_attention_2", choices=["flash_attention_2", "sdpa", "eager"])
     parser.add_argument('--model_version', type=str, default=None, help='provider of model')
     parser.add_argument('--model_name_suffix', type=str, default=None, help='name of model')
-    parser.add_argument('--model_provider', type=str, default="LLaMA", help='which model to use')
+    parser.add_argument('--model_provider', type=str, default="HF", help='which model to use')
     parser.add_argument('--api_key', type=str, default="", help='OpenAI API Key')
     parser.add_argument('--step', type=int, default=1000)
-    parser.add_argument('--method', type=str, default="full", choices=['full', 'pyramidkv', 'snapkv', 'restkv', 'streamingllm', 'h2o', 'cam'])
-    parser.add_argument('--max_capacity_prompt', type=int, default=128)
-    parser.add_argument("--use_pyramid", action="store_true", help="Whether to use Pyramid")
+    parser.add_argument("--compression", action="store_true")
+    parser.add_argument("--compression_mode", type=str, default=None)
+    parser.add_argument("--compression_budget", type=int, default=4096)
+    parser.add_argument("--enable_thinking", action="store_true", help="Pass enable_thinking=True to chat templates that support it.")
     args = parser.parse_args()
 
 
+    validate_args(args)
 
     ht = LLMNeedleHaystackTester(model_name=args.model_name,
                                  model_name_suffix=args.model_name_suffix,
@@ -522,10 +622,11 @@ if __name__ == "__main__":
                                  openai_api_key=args.api_key,
                                  context_lengths_max=args.e_len,
                                  step=args.step,
-                                 method=args.method,
-                                 max_capacity_prompt=args.max_capacity_prompt,
                                  attn_implementation=args.attn_implementation,
-                                 use_pyramid=args.use_pyramid
+                                 compression=args.compression,
+                                 compression_mode=args.compression_mode,
+                                 compression_budget=args.compression_budget,
+                                 enable_thinking=args.enable_thinking
                                  )
 
     ht.start_test(args)
