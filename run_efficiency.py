@@ -57,14 +57,49 @@ def synchronize_all_cuda_devices() -> None:
             torch.cuda.synchronize(device_idx)
 
 
+def reset_all_cuda_peak_memory_stats() -> None:
+    if torch.cuda.is_available():
+        for device_idx in range(torch.cuda.device_count()):
+            torch.cuda.reset_peak_memory_stats(device=device_idx)
+
+
+def total_cuda_max_memory_allocated() -> int:
+    if not torch.cuda.is_available():
+        return 0
+    return sum(
+        torch.cuda.max_memory_allocated(device=device_idx)
+        for device_idx in range(torch.cuda.device_count())
+    )
+
+
+def total_cuda_memory_allocated() -> int:
+    if not torch.cuda.is_available():
+        return 0
+    return sum(
+        torch.cuda.memory_allocated(device=device_idx)
+        for device_idx in range(torch.cuda.device_count())
+    )
+
+
 class FirstTokenTimingCriteria(StoppingCriteria):
-    def __init__(self):
+    def __init__(self, track_decode_memory=False):
         self.first_token_time = None
+        self.track_decode_memory = track_decode_memory
+        self.decode_memory_tracking_started = False
+        self.prefill_peak_memory = 0
+        self.decode_memory_samples = []
 
     def __call__(self, input_ids, scores, **kwargs):
         if self.first_token_time is None:
             synchronize_all_cuda_devices()
             self.first_token_time = time.perf_counter()
+            if self.track_decode_memory:
+                self.prefill_peak_memory = total_cuda_max_memory_allocated()
+                reset_all_cuda_peak_memory_stats()
+                self.decode_memory_tracking_started = True
+                self.decode_memory_samples.append(total_cuda_memory_allocated())
+        elif self.track_decode_memory and self.decode_memory_tracking_started:
+            self.decode_memory_samples.append(total_cuda_memory_allocated())
         return False
 
 
@@ -145,7 +180,7 @@ def load_model_and_tokenizer(
 
 
 def run_generation_with_timing(model, input_ids, attention_mask, tokenizer, max_new_tokens):
-    first_token_timer = FirstTokenTimingCriteria()
+    first_token_timer = FirstTokenTimingCriteria(track_decode_memory=True)
     stopping_criteria = StoppingCriteriaList([first_token_timer])
 
     synchronize_all_cuda_devices()
@@ -163,6 +198,14 @@ def run_generation_with_timing(model, input_ids, attention_mask, tokenizer, max_
     )
     synchronize_all_cuda_devices()
     total_time = time.perf_counter() - start_time
+    decode_peak_memory = total_cuda_max_memory_allocated()
+    total_peak_memory = max(first_token_timer.prefill_peak_memory, decode_peak_memory)
+    decode_avg_memory = (
+        sum(first_token_timer.decode_memory_samples)
+        / len(first_token_timer.decode_memory_samples)
+        if first_token_timer.decode_memory_samples
+        else 0
+    )
 
     generated_tokens = generated_ids.shape[-1] - input_ids.shape[-1]
     if first_token_timer.first_token_time is None:
@@ -175,7 +218,15 @@ def run_generation_with_timing(model, input_ids, attention_mask, tokenizer, max_
     else:
         avg_tpot = (total_time - ttft) / (generated_tokens - 1)
 
-    return generated_ids, total_time, ttft, avg_tpot, generated_tokens
+    return (
+        generated_ids,
+        total_time,
+        ttft,
+        avg_tpot,
+        generated_tokens,
+        total_peak_memory,
+        decode_avg_memory,
+    )
 
 def measure_throughput(
     model_path: str = "Qwen/QwQ-32B",
@@ -213,8 +264,6 @@ def measure_throughput(
         print("Program terminated to avoid overwriting existing results.")
         return
 
-    num_gpus = torch.cuda.device_count()
-
     model, tokenizer = load_model_and_tokenizer(
         model_path=model_path,
         compression=compression,
@@ -231,7 +280,7 @@ def measure_throughput(
             print(f"Warm Up Run #{i}")
 
             with torch.no_grad():
-                generated_ids, _, _, _, _ = run_generation_with_timing(
+                generated_ids, _, _, _, _, _, _ = run_generation_with_timing(
                     model=model,
                     input_ids=input_id,
                     attention_mask=attn_mask,
@@ -242,20 +291,30 @@ def measure_throughput(
         del generated_ids
         cleanup_memory()
     
-    for i in range(num_gpus):
-        torch.cuda.reset_peak_memory_stats(device=i)
+    reset_all_cuda_peak_memory_stats()
 
 
     results_list = []
     time_list = []  # Store time for each run in seconds
     ttft_list = []  # Store TTFT for each run in seconds
     tpot_list = []  # Store average TPOT for each run in seconds/token
+    peak_memory_list = []  # Store peak GPU memory for each run in bytes
+    decode_avg_memory_list = []  # Store decode-stage average GPU memory for each run in bytes
 
     for i in range(num_runs):
         print(f"Test Run #{i}")
+        reset_all_cuda_peak_memory_stats()
 
         with torch.no_grad():
-            generated_ids, total_time, ttft, avg_tpot, generated_tokens = run_generation_with_timing(
+            (
+                generated_ids,
+                total_time,
+                ttft,
+                avg_tpot,
+                generated_tokens,
+                peak_memory,
+                decode_avg_memory,
+            ) = run_generation_with_timing(
                 model=model,
                 input_ids=input_id,
                 attention_mask=attn_mask,
@@ -268,6 +327,8 @@ def measure_throughput(
         time_list.append(total_time)
         ttft_list.append(ttft)
         tpot_list.append(avg_tpot)
+        peak_memory_list.append(peak_memory)
+        decode_avg_memory_list.append(decode_avg_memory)
 
         print(f"Generated IDs length: {generated_ids.shape}")
 
@@ -279,10 +340,8 @@ def measure_throughput(
     avg_ttft = average_excluding_min_max(ttft_list)  # Average TTFT in seconds
     avg_tpot = average_excluding_min_max(tpot_list)  # Average TPOT in seconds/token
 
-    total_max_memory = 0
-    for i in range(num_gpus):
-        max_mem = torch.cuda.max_memory_allocated(device=i)
-        total_max_memory += max_mem
+    total_max_memory = max(peak_memory_list)
+    avg_decode_memory = average_excluding_min_max(decode_avg_memory_list)
 
     # Prepare results for both console and file output
     results_text = []
@@ -303,10 +362,13 @@ def measure_throughput(
     results_text.append(f"  Number of Test Runs: {num_runs}")
     results_text.append(f"")
     results_text.append(f"Individual Run Results:")
-    for i, (throughput, run_time, ttft, tpot) in enumerate(zip(results_list, time_list, ttft_list, tpot_list)):
+    for i, (throughput, run_time, ttft, tpot, decode_avg_memory) in enumerate(
+        zip(results_list, time_list, ttft_list, tpot_list, decode_avg_memory_list)
+    ):
         results_text.append(
             f"  Run {i+1}: {throughput:.2f} tokens/sec, {run_time:.2f} seconds, "
-            f"TTFT={ttft * 1000:.2f} ms, Avg TPOT={tpot * 1000:.2f} ms/token"
+            f"TTFT={ttft * 1000:.2f} ms, Avg TPOT={tpot * 1000:.2f} ms/token, "
+            f"Decode Avg GPU Memory={decode_avg_memory / 1000**3:.2f} GB"
         )
     results_text.append(f"")
     results_text.append(f"Average Throughput (tokens/sec): {avg_throughput:.2f}")
@@ -314,6 +376,9 @@ def measure_throughput(
     results_text.append(f"Average TTFT (ms): {avg_ttft * 1000:.2f}")
     results_text.append(f"Average TPOT (ms/token): {avg_tpot * 1000:.2f}")
     results_text.append(f"Peak GPU Memory: {total_max_memory / 1000**2 / 1000:.2f} GB")
+    results_text.append(
+        f"Average Decode GPU Memory: {avg_decode_memory / 1000**3:.2f} GB"
+    )
     results_text.append("=" * 60)
 
     # Print to console
@@ -340,7 +405,8 @@ def measure_throughput(
     print(f"Average Time per Run (seconds)={avg_time:.2f}")
     print(f"Average TTFT (ms)={avg_ttft * 1000:.2f}")
     print(f"Average TPOT (ms/token)={avg_tpot * 1000:.2f}")
-    print(f"Peak GPU Memory: {total_max_memory / 1000**2 / 1000:.2f} GB\n")
+    print(f"Peak GPU Memory: {total_max_memory / 1000**2 / 1000:.2f} GB")
+    print(f"Average Decode GPU Memory: {avg_decode_memory / 1000**3:.2f} GB\n")
 
 
 if __name__ == "__main__":
