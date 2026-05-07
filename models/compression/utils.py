@@ -490,3 +490,104 @@ def visualize_multistep_token_eviction_score_by_head(
     html = f'<pre style="font-family: monospace; white-space: pre-wrap; word-wrap: break-word;">{"".join(html_parts)}</pre>'
 
     return HTML(html)
+
+
+def collect_gate_method_overlap(model):
+    """
+    Collect per-layer/per-head overlap rates recorded by compression methods.
+    Each sample is expected to have one prefill record per layer; if multiple
+    records exist, the latest one is used.
+
+    Returns:
+        overlap_matrix: shape (num_recorded_layers, max_num_kv_heads)
+        layer_indices: true model layer ids for each matrix row
+    """
+    import numpy as np
+
+    model_body = getattr(model, "model", model)
+    layers = getattr(model_body, "layers", None)
+    if layers is None and hasattr(model_body, "language_model"):
+        layers = getattr(model_body.language_model, "layers", None)
+    if layers is None:
+        raise ValueError("Could not find decoder layers on the provided model.")
+
+    layer_records = []
+    for fallback_layer_idx, layer in enumerate(layers):
+        self_attn = getattr(layer, "self_attn", None)
+        kv_cluster = getattr(self_attn, "kv_cluster", None)
+        overlap_records = getattr(kv_cluster, "gate_method_overlap", None)
+        if overlap_records is None:
+            overlap_records = getattr(kv_cluster, "gate_snapkv_overlap", None)
+        if not overlap_records:
+            continue
+
+        layer_overlap = overlap_records[-1].float().mean(dim=0).numpy()
+        layer_idx = int(getattr(kv_cluster, "layer_idx", fallback_layer_idx))
+        layer_records.append((layer_idx, layer_overlap))
+
+    if not layer_records:
+        raise ValueError(
+            "No gate/method overlap records found. Enable "
+            "`record_gate_overlap=True` in the compression method_config and run a "
+            "prefill whose sequence length reaches the compression budget."
+        )
+
+    layer_records.sort(key=lambda item: item[0])
+    layer_indices = np.asarray([item[0] for item in layer_records], dtype=np.int64)
+    max_heads = max(item[1].shape[0] for item in layer_records)
+    overlap_matrix = np.full((len(layer_records), max_heads), np.nan, dtype=np.float32)
+    for row_idx, (_, layer_overlap) in enumerate(layer_records):
+        overlap_matrix[row_idx, : layer_overlap.shape[0]] = layer_overlap
+
+    return overlap_matrix, layer_indices
+
+
+def plot_gate_method_overlap(model, output_path, interpolation="bicubic"):
+    """
+    Plot the overlap rate between gate topk and compression-method topk.
+
+    The x axis is KV head id, the y axis is the true layer id, and color is
+    overlap rate in [0, 1].
+    """
+    import os
+
+    import matplotlib.pyplot as plt
+
+    overlap_matrix, layer_indices = collect_gate_method_overlap(model)
+    output_dir = os.path.dirname(os.path.abspath(output_path))
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+
+    fig_width = max(6.0, overlap_matrix.shape[1] * 0.45)
+    fig_height = max(4.0, overlap_matrix.shape[0] * 0.28)
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height), constrained_layout=True)
+
+    cmap = plt.get_cmap("viridis").copy()
+    cmap.set_bad(color="#eeeeee")
+    image = ax.imshow(
+        overlap_matrix,
+        aspect="auto",
+        origin="lower",
+        interpolation=interpolation,
+        vmin=0.0,
+        vmax=1.0,
+        cmap=cmap,
+    )
+
+    ax.set_xlabel("Head id")
+    ax.set_ylabel("Layer id")
+    ax.set_title("Gate TopK / Method TopK Overlap")
+    ax.set_xticks(range(overlap_matrix.shape[1]))
+    ax.set_yticks(range(len(layer_indices)))
+    ax.set_yticklabels(layer_indices.tolist())
+
+    colorbar = fig.colorbar(image, ax=ax)
+    colorbar.set_label("Overlap rate")
+
+    fig.savefig(output_path, dpi=200)
+    plt.close(fig)
+    return {
+        "output_path": output_path,
+        "overlap_matrix": overlap_matrix,
+        "layer_indices": layer_indices,
+    }

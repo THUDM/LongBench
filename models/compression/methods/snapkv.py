@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from . import compute_attention_scores
+from .gate_overlap import init_gate_overlap_recorder, record_gate_topk_overlap
 
 
 class SnapKV:
@@ -12,6 +13,7 @@ class SnapKV:
         window_size=8,
         kernel_size=7,
         record_kept_token_indices=False,
+        record_gate_overlap=False,
         layer_idx=None,
         model_config=None,
         model_type=None,
@@ -35,11 +37,15 @@ class SnapKV:
             self.kept_token_indices = []
             self.kept_attention_scores = []
 
+        init_gate_overlap_recorder(self, "snapkv", record_gate_overlap)
+
     def update_kv(
         self,
         key_states,
         query_states,
         value_states,
+        gate_states=None,
+        is_prefill=False,
     ):
         head_dim = query_states.shape[-1]
         kv_cache_len = key_states.shape[-2]
@@ -68,6 +74,17 @@ class SnapKV:
 
             # shape: (bsz, num_kv_heads, budget - window_size)
             indices = attn_cache.topk(self.budget - self.window_size, dim=-1).indices
+            record_gate_topk_overlap(
+                self,
+                method_indices=indices,
+                gate_states=gate_states,
+                kv_cache_len=kv_cache_len,
+                is_prefill=is_prefill,
+                candidate_indices=torch.arange(
+                    kv_cache_len - self.window_size,
+                    device=indices.device,
+                ),
+            )
 
             #####################################################
             ###### Store evicted token indices start ############

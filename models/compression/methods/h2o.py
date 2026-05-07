@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from . import compute_attention_scores
+from .gate_overlap import init_gate_overlap_recorder, record_gate_topk_overlap
 
 
 class H2O:
@@ -9,6 +10,7 @@ class H2O:
         budget=128,
         window_size=8,
         record_kept_token_indices=False,
+        record_gate_overlap=False,
         layer_idx=None,
         model_config=None,
         model_type=None,
@@ -29,12 +31,15 @@ class H2O:
         if self.record_kept_token_indices:
             self.evicted_token_num = 0
             self.kept_token_indices = []
+        init_gate_overlap_recorder(self, "h2o", record_gate_overlap)
 
     def update_kv(
         self,
         key_states,
         query_states,
         value_states,
+        gate_states=None,
+        is_prefill=False,
     ):
         head_dim = query_states.shape[-1]
         kv_cache_len = key_states.shape[-2]
@@ -47,7 +52,7 @@ class H2O:
 
             attn_weights_sum = (
                 nn.functional.softmax(
-                    attn_weights[:, :, : -self.window_size],
+                    attn_weights[:, :, :, : -self.window_size],
                     dim=-1,
                     dtype=torch.float32,
                 )
@@ -59,6 +64,17 @@ class H2O:
             indices = attn_weights_sum.topk(
                     self.budget - self.window_size, dim=-1
                 ).indices
+            record_gate_topk_overlap(
+                self,
+                method_indices=indices,
+                gate_states=gate_states,
+                kv_cache_len=kv_cache_len,
+                is_prefill=is_prefill,
+                candidate_indices=torch.arange(
+                    kv_cache_len - self.window_size,
+                    device=indices.device,
+                ),
+            )
 
             #####################################################
             ###### Store evicted token indices start ############

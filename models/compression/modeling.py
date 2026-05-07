@@ -111,12 +111,12 @@ def Qwen3_5Attention_forward(
     input_shape = hidden_states.shape[:-1]
     hidden_shape = (*input_shape, -1, self.head_dim)
 
-    query_states, gate = torch.chunk(
+    query_states, gate_states = torch.chunk(
         self.q_proj(hidden_states).view(*input_shape, -1, self.head_dim * 2),
         2,
         dim=-1,
     )
-    gate = gate.reshape(*input_shape, -1)
+    gate = gate_states.reshape(*input_shape, -1)
 
     query_states = self.q_norm(query_states.view(hidden_shape)).transpose(1, 2)
     key_states = self.k_norm(self.k_proj(hidden_states).view(hidden_shape)).transpose(
@@ -158,10 +158,17 @@ def Qwen3_5Attention_forward(
         # =============== decoding-time compression start ===============
         cached_queries = past_key_values.layers[self.layer_idx].query_cache
         if self.config.compression is None or query_states.shape[-2] > 1:
+            update_kwargs = {}
+            if getattr(self.kv_cluster, "record_gate_overlap", False):
+                update_kwargs = {
+                    "gate_states": gate_states,
+                    "is_prefill": query_states.shape[-2] > 1,
+                }
             key_states_compress, value_states_compress = self.kv_cluster.update_kv(
                 key_states,
                 cached_queries,
                 value_states,
+                **update_kwargs,
             )
 
             if self.config.update_kv is True:
@@ -184,10 +191,17 @@ def Qwen3_5Attention_forward(
                 self.layer_idx,
             )
 
+            update_kwargs = {}
+            if getattr(self.kv_cluster, "record_gate_overlap", False):
+                update_kwargs = {
+                    "gate_states": gate_states,
+                    "is_prefill": query_states.shape[-2] > 1,
+                }
             key_states_compress, value_states_compress = self.kv_cluster.update_kv(
                 key_states,
                 cached_queries,
                 value_states,
+                **update_kwargs,
             )
 
             if self.config.update_kv is True:

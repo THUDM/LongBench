@@ -14,6 +14,7 @@ from attn_heatmap import (
     get_full_attention_layer_indices,
     is_qwen_attn_heatmap_model,
 )
+from gate_overlap_plot import clear_gate_overlap_records, save_gate_overlap_plot
 from misc import (
     build_output_path,
     load_json,
@@ -49,7 +50,7 @@ def truncate_prompt(prompt, model_name, tokenizer, max_new_tokens, max_input_len
         prompt = tokenizer.decode(input_ids, skip_special_tokens=True)
     return prompt
 
-def build_compression_config(compression_mode, compression_budget):
+def build_compression_config(compression_mode, compression_budget, gate_overlap_mode=False):
     return {
         "method": compression_mode,
         "method_config": {
@@ -59,6 +60,7 @@ def build_compression_config(compression_mode, compression_budget):
             "retain_ratio": 0.2,
             "retain_direction": "last",
             "first_tokens": 4,
+            "record_gate_overlap": gate_overlap_mode,
         },
         "compression": None,
         "update_kv": True,
@@ -87,6 +89,7 @@ def load_model_and_tokenizer(
     compression=False,
     compression_mode=None,
     compression_budget=4096,
+    gate_overlap_mode=False,
 ):
     model_path = get_model_path(model_name)
     tokenizer = AutoTokenizer.from_pretrained(
@@ -120,7 +123,13 @@ def load_model_and_tokenizer(
                 f"Compression currently supports only qwen3.5 models, got: {model_name}"
             )
 
-        replace_qwen3_5(build_compression_config(compression_mode, compression_budget))
+        replace_qwen3_5(
+            build_compression_config(
+                compression_mode,
+                compression_budget,
+                gate_overlap_mode=gate_overlap_mode,
+            )
+        )
         model = AutoModelForCausalLM.from_pretrained(model_path, **model_kwargs)
         apply_qwen3_5_compression_setup(model, tokenizer, compression_mode)
     elif "qwen3.5" in model_path.lower():
@@ -271,6 +280,12 @@ def validate_args(args):
         raise ValueError("--compression requires --compression_mode.")
     if args.compression and args.compression_budget < 1:
         raise ValueError("--compression_budget must be at least 1 when compression is enabled.")
+    if args.gate_overlap_mode and not args.compression:
+        raise ValueError("--gate_overlap_mode requires --compression.")
+    if args.gate_overlap_mode and not args.compression_mode:
+        raise ValueError("--gate_overlap_mode requires --compression_mode.")
+    if args.gate_overlap_mode and args.n_proc != 1:
+        raise ValueError("--gate_overlap_mode currently requires --n_proc 1.")
     if not args.attn_heatmap_mode:
         return
     if not is_qwen_attn_heatmap_model(args.model):
@@ -286,11 +301,14 @@ def get_pred(data, args, fout, out_file):
         compression=args.compression,
         compression_mode=args.compression_mode,
         compression_budget=args.compression_budget,
+        gate_overlap_mode=args.gate_overlap_mode,
     )
     attn_run_writer = build_attn_run_writer(args, out_file, model)
-    for item in tqdm(data):
+    for sample_index, item in enumerate(tqdm(data)):
         item = dict(item)
         attn_sample_writer = attn_run_writer.new_sample(item) if attn_run_writer is not None else None
+        if args.gate_overlap_mode:
+            clear_gate_overlap_records(model)
         try:
             context = item['context']
             if args.rag > 0:
@@ -356,6 +374,19 @@ def get_pred(data, args, fout, out_file):
             if attn_sample_writer is not None:
                 item["attn_capture_status"] = attn_sample_writer.build_capture_status()
                 item["attn_artifact"] = os.path.relpath(attn_sample_writer.sample_dir, start=args.attn_heatmap_dir)
+            gate_overlap_path = save_gate_overlap_plot(
+                model,
+                args,
+                out_file,
+                item,
+                sample_index,
+            )
+            if gate_overlap_path is not None:
+                item["gate_overlap_artifact"] = os.path.relpath(
+                    gate_overlap_path,
+                    start=args.gate_overlap_dir,
+                )
+            if attn_sample_writer is not None:
                 attn_sample_writer.finalize(item)
             fout.write(json.dumps(item, ensure_ascii=False) + '\n')
             fout.flush()
@@ -369,6 +400,9 @@ def get_pred(data, args, fout, out_file):
                 item["attn_artifact"] = os.path.relpath(attn_sample_writer.sample_dir, start=args.attn_heatmap_dir)
                 attn_sample_writer.finalize(item)
             continue
+        finally:
+            if args.gate_overlap_mode:
+                clear_gate_overlap_records(model)
 
 def main(args):
     print(args)
@@ -418,5 +452,8 @@ if __name__ == "__main__":
     parser.add_argument("--attn_heatmap_mode", action="store_true")
     parser.add_argument("--attn_heatmap_dir", type=str, default="output_dir/results_longbench/attn_heatmaps")
     parser.add_argument("--attn_max_prefill_tokens", type=int, default=None, help="Skip attention heatmap capture when the prefill token count exceeds this cap.")
+    parser.add_argument("--gate_overlap_mode", "--gate_method_overlap_mode", action="store_true", help="Record gate topk overlap with the active compression method and save one layer/head heatmap per sample.")
+    parser.add_argument("--gate_overlap_dir", type=str, default="output_dir/results_longbench/gate_overlaps")
+    parser.add_argument("--gate_overlap_interpolation", type=str, default="bicubic", help="Matplotlib interpolation mode for the gate/method overlap heatmap.")
     args = parser.parse_args()
     main(args)
