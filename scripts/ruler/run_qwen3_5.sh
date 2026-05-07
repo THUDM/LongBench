@@ -5,6 +5,7 @@
 MODEL_PATH="Qwen/Qwen3.5-9B"  # e.g., meta-llama/Llama-3.1-8B-Instruct
 SAVE_DIR="output_dir/results_ruler"
 ATTN="flash_attention_2"
+MODEL_MAXLEN=200000
 
 EXPERIMENTS=(
     "FullKV 0"
@@ -54,6 +55,7 @@ for exp in "${EXPERIMENTS[@]}"; do
         --model_path "${MODEL_PATH}" \
         --attn_implementation "${ATTN}" \
         --save_dir "${SAVE_DIR}" \
+        --model_maxlen "${MODEL_MAXLEN}" \
         "${compression_args[@]}" &
     PIDS+=("$!")
 
