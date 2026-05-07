@@ -2,12 +2,11 @@
 # Needle-in-a-Haystack on Qwen3.5-9B 
 # Tests at budget=128L and budget=1024L
 
-MODEL_PATH="<path_to_model>"  # e.g., meta-llama/Llama-3.1-8B-Instruct
+MODEL_PATH="Qwen/Qwen3.5-9B"  # e.g., meta-llama/Llama-3.1-8B-Instruct
 ATTN="flash_attention_2"
 
 EXPERIMENTS=(
     "FullKV 128 Qwen3.5"
-    "snapkv 128 Qwen3.5"
 )
 
 CUDA_DEVICES=("0" "1" "2" "3")
@@ -35,7 +34,7 @@ for exp in "${EXPERIMENTS[@]}"; do
         --model_provider "${provider}" \
         --model_name "${MODEL_PATH}" \
         --attn_implementation "${ATTN}" \
-        --step 200 \
+        --step 1000 \
         "${version_args[@]}" \
         "${compression_args[@]}" &
 

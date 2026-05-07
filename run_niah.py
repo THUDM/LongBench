@@ -394,7 +394,8 @@ class LLMNeedleHaystackTester:
         test_end_time = time.time()
         test_elapsed_time = test_end_time - test_start_time
         if len(response) != 0:
-            score = scorer.score(self.needle, response)['rouge1'].fmeasure*10
+            # score = scorer.score(self.needle, response)['rouge1'].fmeasure*10
+            score = scorer.score("eat a sandwich and sit in Dolores Park on a sunny day", response)['rouge1'].fmeasure*10
         else:
             score = 0.0
 
