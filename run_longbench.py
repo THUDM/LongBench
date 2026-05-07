@@ -27,22 +27,21 @@ from misc import (
 from models.compression.monkeypatch import replace_qwen3_5
 
 model_map = load_json("config/model2path.json")
-maxlen_map = load_json("config/model2maxlen.json")
 prompt_templates = load_prompt_templates()
 
 
 def get_model_path(model_name):
     return model_map.get(model_name, model_name)
 
-def get_max_input_len(model_name, tokenizer, max_new_tokens):
-    max_len = maxlen_map.get(model_name, getattr(tokenizer, "model_max_length", 120000))
+def get_max_input_len(model_maxlen, max_new_tokens):
+    max_len = model_maxlen
     if max_len is None or max_len > 10 ** 8:
         max_len = 120000
     return max(1, max_len - max_new_tokens)
 
-def truncate_prompt(prompt, model_name, tokenizer, max_new_tokens, max_input_len=None):
+def truncate_prompt(prompt, tokenizer, max_input_len):
     if max_input_len is None:
-        max_input_len = get_max_input_len(model_name, tokenizer, max_new_tokens)
+        raise ValueError("max_input_len is required.")
     input_ids = tokenizer.encode(prompt, add_special_tokens=False)
     if len(input_ids) > max_input_len:
         half = max_input_len // 2
@@ -196,6 +195,7 @@ def query_llm(
     model_name,
     model,
     tokenizer,
+    model_maxlen,
     temperature=0.5,
     max_new_tokens=128,
     stop=None,
@@ -203,8 +203,8 @@ def query_llm(
     attn_sample_writer=None,
     prefill_label="response",
 ):
-    max_input_len = get_max_input_len(model_name, tokenizer, max_new_tokens)
-    prompt = truncate_prompt(prompt, model_name, tokenizer, max_new_tokens, max_input_len=max_input_len)
+    max_input_len = get_max_input_len(model_maxlen, max_new_tokens)
+    prompt = truncate_prompt(prompt, tokenizer, max_input_len)
     device = get_input_device(model)
     inputs = build_inputs(prompt, tokenizer, device, enable_thinking=enable_thinking)
     input_len = inputs["input_ids"].shape[-1]
@@ -274,6 +274,8 @@ def build_attn_run_writer(args, out_file, model):
 
 
 def validate_args(args):
+    if args.model_maxlen < 1:
+        raise ValueError("--model_maxlen must be at least 1.")
     if args.num_samples is not None and args.num_samples < 1:
         raise ValueError("--num_samples must be at least 1 when provided.")
     if args.compression and not args.compression_mode:
@@ -329,6 +331,7 @@ def get_pred(data, args, fout, out_file):
                     model_name,
                     model,
                     tokenizer,
+                    args.model_maxlen,
                     temperature=0.1,
                     max_new_tokens=1024,
                     enable_thinking=args.cot,
@@ -341,6 +344,7 @@ def get_pred(data, args, fout, out_file):
                     model_name,
                     model,
                     tokenizer,
+                    args.model_maxlen,
                     temperature=0.1,
                     max_new_tokens=128,
                     enable_thinking=args.cot,
@@ -358,6 +362,7 @@ def get_pred(data, args, fout, out_file):
                     model_name,
                     model,
                     tokenizer,
+                    args.model_maxlen,
                     temperature=0.1,
                     max_new_tokens=128,
                     enable_thinking=args.cot,
@@ -440,6 +445,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--save_dir", "-s", type=str, default="output_dir/results_longbench")
     parser.add_argument("--model", "-m", type=str, default="GLM-4-9B-Chat")
+    parser.add_argument("--model_maxlen", type=int, default=120000, help="Model context length used for prompt truncation.")
     parser.add_argument("--cot", "-cot", action='store_true') # set to True if using COT
     parser.add_argument("--no_context", "-nc", action='store_true') # set to True if using no context (directly measuring memorization)
     parser.add_argument("--rag", "-rag", type=int, default=0) # set to 0 if RAG is not used, otherwise set to N when using top-N retrieved context

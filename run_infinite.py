@@ -109,15 +109,8 @@ def set_seed(seed):
     torch.cuda.manual_seed_all(seed)
 
 
-def get_max_input_len(model_path, tokenizer, max_new_tokens):
-    model_path = model_path.lower()
-    max_len = None
-    for key, value in model2maxlen.items():
-        if key in model_path:
-            max_len = value
-            break
-    if max_len is None:
-        max_len = getattr(tokenizer, "model_max_length", 120000)
+def get_max_input_len(model_maxlen, max_new_tokens):
+    max_len = model_maxlen
     if max_len is None or max_len > 10 ** 8:
         max_len = 120000
     return max(1, max_len - max_new_tokens)
@@ -208,6 +201,8 @@ def load_model_and_tokenizer(args):
 def validate_args(args):
     if not args.model_path:
         raise ValueError("--model_path is required.")
+    if args.model_maxlen < 1:
+        raise ValueError("--model_maxlen must be at least 1.")
     if args.compression and not args.compression_mode:
         raise ValueError("--compression requires --compression_mode.")
     if args.compression and args.compression_budget < 1:
@@ -385,6 +380,12 @@ def parse_args() -> Namespace:
         type=str,
         default=None,
         help="if specified, we will load the model to generate the predictions.",
+    )
+    p.add_argument(
+        "--model_maxlen",
+        type=int,
+        default=120000,
+        help="Model context length used for prompt truncation.",
     )
     p.add_argument("--use_fast_tokenizer", type=bool, default=True, help="")
     p.add_argument("--output_attentions", type=bool, default=False, help="")
@@ -583,7 +584,7 @@ def main(args):
     input_max_len = 0
 
     output_max_len = dataset2maxlen[args.dataset]
-    max_input_len = get_max_input_len(args.model_path, tokenizer, output_max_len)
+    max_input_len = get_max_input_len(args.model_maxlen, output_max_len)
 
     examples = load_data(args.dataset)
     for example in examples:
