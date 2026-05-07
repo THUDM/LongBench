@@ -3,7 +3,7 @@ import json
 import os
 from collections import defaultdict
 
-RESULTS_DIR = "results"
+RESULTS_DIR = "output_dir/results_longbench"
 DOMAIN_ORDER = [
     "Long-dialogue History Understanding",
     "Single-Document QA",
@@ -81,6 +81,6 @@ for file in files:
     row.extend(str(pct(domain_acc[domain], domain_total[domain])) for domain in DOMAIN_ORDER)
     output.append(row)
 
-with open('result.csv', 'w', encoding='utf-8', newline='') as f:
+with open('output_dir/results_longbench/result.csv', 'w', encoding='utf-8', newline='') as f:
     writer = csv.writer(f)
     writer.writerows(output)
