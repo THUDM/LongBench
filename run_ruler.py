@@ -42,6 +42,7 @@ model2maxlen = {
     "mistral": 31500,
     "qwen2.5": 127000,
     "gemma": 7950,
+    "qwen3.5": 200000,
 }
 
 
@@ -124,7 +125,6 @@ def load_model_and_tokenizer(args):
         "trust_remote_code": True,
         "low_cpu_mem_usage": True,
         "device_map": "auto",
-        "use_cache": args.use_cache,
         "attn_implementation": args.attn_implementation,
     }
     if torch.cuda.is_available():
@@ -388,7 +388,6 @@ if __name__ == "__main__":
 
     parser.add_argument("--eval_batch_size", type=int, default=1, help="batch size for evaluation.")
 
-    parser.add_argument("--use_cache", type=bool, default=True, help="")
     parser.add_argument("--attn_implementation", type=str,  default="flash_attention_2", choices=["flash_attention_2", "sdpa", "eager"])
     parser.add_argument("--quant_method",type=str,default=None,choices=["kivi","kvquant"])
     parser.add_argument("--nbits", type=int, default=8, help="")

@@ -28,7 +28,7 @@ model2maxlen = {
     "mistral": 31500,
     "qwen2.5": 127000,
     "gemma": 7950,
-    "qwen3.5": 2000,
+    "qwen3.5": 200000,
 }
 
 DATA_NAME_TO_PATH = {
