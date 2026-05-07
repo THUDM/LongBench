@@ -404,7 +404,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--save_dir", "-s", type=str, default="results")
+    parser.add_argument("--save_dir", "-s", type=str, default="output_dir/results_longbench")
     parser.add_argument("--model", "-m", type=str, default="GLM-4-9B-Chat")
     parser.add_argument("--cot", "-cot", action='store_true') # set to True if using COT
     parser.add_argument("--no_context", "-nc", action='store_true') # set to True if using no context (directly measuring memorization)
@@ -416,7 +416,7 @@ if __name__ == "__main__":
     parser.add_argument("--compression_mode", type=str, default=None)
     parser.add_argument("--compression_budget", type=int, default=4096)
     parser.add_argument("--attn_heatmap_mode", action="store_true")
-    parser.add_argument("--attn_heatmap_dir", type=str, default="results/attn_heatmaps")
+    parser.add_argument("--attn_heatmap_dir", type=str, default="output_dir/results_longbench/attn_heatmaps")
     parser.add_argument("--attn_max_prefill_tokens", type=int, default=None, help="Skip attention heatmap capture when the prefill token count exceeds this cap.")
     args = parser.parse_args()
     main(args)

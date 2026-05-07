@@ -251,7 +251,7 @@ def measure_throughput(
         mode_name = compression_mode if compression and compression_mode else "fullkv"
         budget_suffix = f"_budget_{compression_budget}" if compression else ""
         output_file = (
-            f"/home/yangx/Qwen3.5_compression/results/efficiency/"
+            f"output_dir/results_efficiency/"
             f"throughput_results_{model_name}_{mode_name}{budget_suffix}_{batch_size}_{input_len}.txt"
         )
     output_dir = os.path.dirname(output_file)
