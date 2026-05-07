@@ -12,6 +12,28 @@ EXPERIMENTS=(
 CUDA_DEVICES=("0" "1" "2" "3")
 NUM_GPUS=${#CUDA_DEVICES[@]}
 IDX=0
+PIDS=()
+
+cleanup() {
+    trap - INT TERM
+    if ((${#PIDS[@]} > 0)); then
+        echo
+        echo "Interrupted. Stopping running Needle Qwen3.5 jobs..."
+        kill -TERM "${PIDS[@]}" 2>/dev/null || true
+        wait "${PIDS[@]}" 2>/dev/null || true
+    fi
+    exit 130
+}
+
+wait_for_batch() {
+    if ((${#PIDS[@]} == 0)); then
+        return
+    fi
+    wait "${PIDS[@]}"
+    PIDS=()
+}
+
+trap cleanup INT TERM
 
 for exp in "${EXPERIMENTS[@]}"; do
     read -r method capacity provider <<< "$exp"
@@ -37,11 +59,12 @@ for exp in "${EXPERIMENTS[@]}"; do
         --step 1000 \
         "${version_args[@]}" \
         "${compression_args[@]}" &
+    PIDS+=("$!")
 
     IDX=$((IDX + 1))
     if (( IDX % NUM_GPUS == 0 )); then
-        wait
+        wait_for_batch
     fi
 done
-wait
+wait_for_batch
 echo "All Needle Qwen3.5 experiments completed."

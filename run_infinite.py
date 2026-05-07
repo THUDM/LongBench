@@ -28,6 +28,7 @@ model2maxlen = {
     "mistral": 31500,
     "qwen2.5": 127000,
     "gemma": 7950,
+    "qwen3.5": 2000,
 }
 
 DATA_NAME_TO_PATH = {
@@ -168,7 +169,6 @@ def load_model_and_tokenizer(args):
         "trust_remote_code": True,
         "low_cpu_mem_usage": True,
         "device_map": "auto",
-        "use_cache": args.use_cache,
         "attn_implementation": args.attn_implementation,
     }
     if torch.cuda.is_available():
@@ -409,7 +409,6 @@ def parse_args() -> Namespace:
         "--eval_batch_size", type=int, default=1, help="batch size for evaluation."
     )
 
-    p.add_argument("--use_cache", type=bool, default=True, help="")
     p.add_argument(
         "--attn_implementation",
         type=str,

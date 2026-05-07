@@ -2,18 +2,39 @@
 # InfiniteBench on Qwen3.5-9B
 # Budget=1024L
 
-MODEL_PATH="<path_to_model>"  # e.g., meta-llama/Llama-3.1-8B-Instruct
+MODEL_PATH="Qwen/Qwen3.5-9B"  # e.g., meta-llama/Llama-3.1-8B-Instruct
 SAVE_DIR="output_dir/results_infinite_bench"
 ATTN="flash_attention_2"
 
 EXPERIMENTS=(
     "FullKV 0"
-    "snapkv 1024"
 )
 
 CUDA_DEVICES=("0" "1")
 NUM_GPUS=${#CUDA_DEVICES[@]}
 IDX=0
+PIDS=()
+
+cleanup() {
+    trap - INT TERM
+    if ((${#PIDS[@]} > 0)); then
+        echo
+        echo "Interrupted. Stopping running InfiniteBench Qwen3.5 jobs..."
+        kill -TERM "${PIDS[@]}" 2>/dev/null || true
+        wait "${PIDS[@]}" 2>/dev/null || true
+    fi
+    exit 130
+}
+
+wait_for_batch() {
+    if ((${#PIDS[@]} == 0)); then
+        return
+    fi
+    wait "${PIDS[@]}"
+    PIDS=()
+}
+
+trap cleanup INT TERM
 
 for exp in "${EXPERIMENTS[@]}"; do
     read -r method budget <<< "$exp"
@@ -33,13 +54,13 @@ for exp in "${EXPERIMENTS[@]}"; do
         --model_path "${MODEL_PATH}" \
         --attn_implementation "${ATTN}" \
         --save_dir "${SAVE_DIR}" \
-        --use_cache True \
         "${compression_args[@]}" &
+    PIDS+=("$!")
 
     IDX=$((IDX + 1))
     if (( IDX % NUM_GPUS == 0 )); then
-        wait
+        wait_for_batch
     fi
 done
-wait
+wait_for_batch
 echo "All InfiniteBench Qwen3.5 experiments completed."

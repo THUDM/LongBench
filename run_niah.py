@@ -455,7 +455,7 @@ class LLMNeedleHaystackTester:
         Checks to see if a result has already been evaluated or not
         """
 
-        results_dir = 'results_needle/results/' + self.model_version
+        results_dir = 'output_dir/results_needle/results/' + self.model_version
         print("Searching existing results at %s" % results_dir)
         if not os.path.exists(results_dir):
             return False
