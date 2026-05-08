@@ -108,10 +108,10 @@ def _parse_linear_state_layer_range(layer_range):
         raise ValueError("linear_state_layer_range cannot be empty.")
     try:
         if ":" not in layer_range:
-            end = int(layer_range)
-            if end < 1:
+            layer_idx = int(layer_range)
+            if layer_idx < 1:
                 raise ValueError
-            return 1, end
+            return layer_idx, layer_idx
 
         if layer_range.count(":") != 1:
             raise ValueError("linear_state_layer_range must be positive.")
@@ -123,7 +123,7 @@ def _parse_linear_state_layer_range(layer_range):
         return start, end
     except ValueError as exc:
         raise ValueError(
-            "linear_state_layer_range must be 'all', 'N', or 'start:end' "
+            "linear_state_layer_range must be 'all', 'N', ':N', or 'start:end' "
             "with 1 <= start <= end."
         ) from exc
 
@@ -140,6 +140,7 @@ def _get_current_linear_state_scores(self, past_key_values, seq_len):
         self.config.method_config.get("linear_state_layer_range", "all")
     )
     linear_state_scores = []
+    linear_state_scores_device = None
     prev_layer_idx = self.layer_idx - 1
     linear_layer_offset = 0
     while prev_layer_idx >= 0 and layer_types[prev_layer_idx] == "linear_attention":
@@ -150,7 +151,12 @@ def _get_current_linear_state_scores(self, past_key_values, seq_len):
         if linear_layer_offset >= layer_start:
             scores = getattr(prev_cache, "linear_state_scores", None)
             if scores is not None and scores.shape[-1] >= seq_len:
-                linear_state_scores.append(scores[:, :, -seq_len:])
+                scores = scores[:, :, -seq_len:]
+                if linear_state_scores_device is None:
+                    linear_state_scores_device = scores.device
+                else:
+                    scores = scores.to(linear_state_scores_device)
+                linear_state_scores.append(scores)
         prev_layer_idx -= 1
 
     if not linear_state_scores:

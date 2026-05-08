@@ -321,7 +321,7 @@ def validate_linear_state_layer_range(layer_range):
             raise ValueError
     except ValueError as exc:
         raise ValueError(
-            "--linear_state_layer_range must be 'all', 'N', or 'start:end' "
+            "--linear_state_layer_range must be 'all', 'N', ':N', or 'start:end' "
             "with 1 <= start <= end."
         ) from exc
 
@@ -528,7 +528,7 @@ if __name__ == "__main__":
     parser.add_argument("--use_linear_state", action=argparse.BooleanOptionalAction, default=True, help="Enable GatedDeltaNet linear-state score enhancement in compression method config.")
     parser.add_argument("--linear_state_weight", type=float, default=0.3, help="Weight of linear-state score when fusing with gate score.")
     parser.add_argument("--linear_state_required", action="store_true", help="Raise an error if linear-state scores are unavailable.")
-    parser.add_argument("--linear_state_layer_range", type=str, default="all", help="Range of preceding linear-attention layers to aggregate: all, N, or 1-indexed start:end from nearest to farthest.")
+    parser.add_argument("--linear_state_layer_range", type=str, default="all", help="Preceding linear-attention layers to aggregate: all, N for only the Nth nearest layer, :N for nearest N layers, or 1-indexed start:end from nearest to farthest.")
     parser.add_argument("--linear_state_layer_reduce", type=str, default="mean", choices=["mean", "max"], help="How to reduce scores from preceding linear-attention layers.")
     parser.add_argument("--linear_state_norm", type=str, default="rank", choices=["rank", "minmax", "none"], help="Normalization used before gate/linear-state score fusion.")
     parser.add_argument("--gate_overlap_dir", type=str, default="output_dir/results_longbench/gate_overlaps")
