@@ -27,6 +27,7 @@ from .methods import (
     SnapKV,
     StreamingLLM,
     H2O,
+    GateKV,
 )
 
 import math
@@ -36,6 +37,7 @@ KV_COMPRESSION_MAP = {
     "snapkv": SnapKV,
     "streamingllm": StreamingLLM,
     "h2o": H2O,
+    "gatekv": GateKV,
 }
 
 logger = logging.get_logger(__name__)
@@ -50,6 +52,20 @@ def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
         return hidden_states
     hidden_states = hidden_states[:, :, None, :, :].expand(batch, num_key_value_heads, n_rep, slen, head_dim)
     return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
+
+
+def _compress_gate_cache(gate_cache, kept_indices, num_key_value_groups):
+    gate_cache = gate_cache.transpose(1, 2)
+    if num_key_value_groups != 1:
+        kept_indices = kept_indices.repeat_interleave(num_key_value_groups, dim=1)
+    kept_indices = kept_indices.to(device=gate_cache.device, dtype=torch.long)
+    kept_indices = kept_indices.unsqueeze(-1).expand(
+        -1,
+        -1,
+        -1,
+        gate_cache.shape[-1],
+    )
+    return gate_cache.gather(dim=2, index=kept_indices).transpose(1, 2)
 
 
 def Qwen3_5Attention_init(
@@ -130,36 +146,52 @@ def Qwen3_5Attention_forward(
     )
 
     if past_key_values is not None:
+        layer_cache = past_key_values.layers[self.layer_idx]
         # =============== Enable Query Cache ============
-        if not hasattr(past_key_values.layers[self.layer_idx], "query_cache"):
-            past_key_values.layers[self.layer_idx].query_cache = None
+        if not hasattr(layer_cache, "query_cache"):
+            layer_cache.query_cache = None
 
-        if past_key_values.layers[self.layer_idx].query_cache is None:
+        if layer_cache.query_cache is None:
             bsz, n_heads, _, head_dim = query_states.shape
-            past_key_values.layers[self.layer_idx].query_cache = torch.empty(
+            layer_cache.query_cache = torch.empty(
                 bsz, n_heads, 0, head_dim
             )
-            past_key_values.layers[self.layer_idx].query_cache = query_states[
+            layer_cache.query_cache = query_states[
                 :, :, -self.config.method_config["window_size"] :, :
             ]
         else:
-            past_key_values.layers[self.layer_idx].query_cache = torch.cat(
-                (past_key_values.layers[self.layer_idx].query_cache, query_states),
+            layer_cache.query_cache = torch.cat(
+                (layer_cache.query_cache, query_states),
                 dim=2,
             )
 
             window_size = self.config.method_config["window_size"]
-            if past_key_values.layers[self.layer_idx].query_cache.shape[-2] > window_size:
-                past_key_values.layers[self.layer_idx].query_cache = past_key_values.layers[self.layer_idx].query_cache[
+            if layer_cache.query_cache.shape[-2] > window_size:
+                layer_cache.query_cache = layer_cache.query_cache[
                     :, :, -window_size:, :
                 ]
         # =============== Enable Query Cache end =========
 
+        requires_gate_states = getattr(self.kv_cluster, "requires_gate_states", False)
+        if requires_gate_states:
+            if not hasattr(layer_cache, "gate_cache") or layer_cache.gate_cache is None:
+                layer_cache.gate_cache = gate_states
+            else:
+                layer_cache.gate_cache = torch.cat(
+                    (layer_cache.gate_cache, gate_states),
+                    dim=1,
+                )
+
         # =============== decoding-time compression start ===============
-        cached_queries = past_key_values.layers[self.layer_idx].query_cache
+        cached_queries = layer_cache.query_cache
         if self.config.compression is None or query_states.shape[-2] > 1:
             update_kwargs = {}
-            if getattr(self.kv_cluster, "record_gate_overlap", False):
+            if requires_gate_states:
+                update_kwargs = {
+                    "gate_states": layer_cache.gate_cache,
+                    "is_prefill": query_states.shape[-2] > 1,
+                }
+            elif getattr(self.kv_cluster, "record_gate_overlap", False):
                 update_kwargs = {
                     "gate_states": gate_states,
                     "is_prefill": query_states.shape[-2] > 1,
@@ -177,6 +209,14 @@ def Qwen3_5Attention_forward(
                     value_states_compress,
                     self.layer_idx,
                 )
+                if requires_gate_states:
+                    kept_indices = getattr(self.kv_cluster, "last_kept_indices", None)
+                    if kept_indices is not None:
+                        layer_cache.gate_cache = _compress_gate_cache(
+                            layer_cache.gate_cache,
+                            kept_indices,
+                            self.num_key_value_groups,
+                        )
             else:
                 past_key_values.update(
                     key_states,
@@ -192,7 +232,12 @@ def Qwen3_5Attention_forward(
             )
 
             update_kwargs = {}
-            if getattr(self.kv_cluster, "record_gate_overlap", False):
+            if requires_gate_states:
+                update_kwargs = {
+                    "gate_states": layer_cache.gate_cache,
+                    "is_prefill": query_states.shape[-2] > 1,
+                }
+            elif getattr(self.kv_cluster, "record_gate_overlap", False):
                 update_kwargs = {
                     "gate_states": gate_states,
                     "is_prefill": query_states.shape[-2] > 1,
@@ -205,8 +250,16 @@ def Qwen3_5Attention_forward(
             )
 
             if self.config.update_kv is True:
-                past_key_values.layers[self.layer_idx].keys = key_states_compress
-                past_key_values.layers[self.layer_idx].values = value_states_compress
+                layer_cache.keys = key_states_compress
+                layer_cache.values = value_states_compress
+                if requires_gate_states:
+                    kept_indices = getattr(self.kv_cluster, "last_kept_indices", None)
+                    if kept_indices is not None:
+                        layer_cache.gate_cache = _compress_gate_cache(
+                            layer_cache.gate_cache,
+                            kept_indices,
+                            self.num_key_value_groups,
+                        )
         else:
             key_states, value_states = past_key_values.update(
                 key_states,

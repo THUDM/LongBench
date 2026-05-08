@@ -98,7 +98,7 @@ def record_gate_topk_overlap(
 
     method_abs_indices = torch.gather(candidate_indices, dim=-1, index=method_indices)
 
-    gate_scores = gate_states[:, :kv_cache_len, :, :].mean(dim=-1).transpose(1, 2)
+    gate_scores = gate_states[:, :kv_cache_len, :, :].norm(p=1, dim=-1).transpose(1, 2)
     gate_candidate_indices = candidate_indices[:, :1, :].expand(
         batch_size,
         gate_scores.shape[1],
