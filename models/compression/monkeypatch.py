@@ -2,6 +2,7 @@ from transformers.models.qwen3_5 import modeling_qwen3_5
 from .modeling import (
     Qwen3_5Attention_init,
     Qwen3_5Attention_forward,
+    Qwen3_5GatedDeltaNet_forward,
     Qwen3_5ForCausalLM_forward,
     Qwen3_5ForConditionalGeneration_forward,
 )
@@ -15,6 +16,7 @@ def replace_qwen3_5(compression_config):
 
     modeling_qwen3_5.Qwen3_5Attention.__init__ = init_wrapper
     modeling_qwen3_5.Qwen3_5Attention.forward = Qwen3_5Attention_forward
+    modeling_qwen3_5.Qwen3_5GatedDeltaNet.forward = Qwen3_5GatedDeltaNet_forward
     modeling_qwen3_5.Qwen3_5ForCausalLM.forward = Qwen3_5ForCausalLM_forward
     modeling_qwen3_5.Qwen3_5ForConditionalGeneration.forward = (
         Qwen3_5ForConditionalGeneration_forward

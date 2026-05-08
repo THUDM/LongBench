@@ -39,6 +39,7 @@ class H2O:
         query_states,
         value_states,
         gate_states=None,
+        linear_state_scores=None,
         is_prefill=False,
     ):
         head_dim = query_states.shape[-1]
@@ -70,6 +71,7 @@ class H2O:
                 gate_states=gate_states,
                 kv_cache_len=kv_cache_len,
                 is_prefill=is_prefill,
+                linear_state_scores=linear_state_scores,
                 candidate_indices=torch.arange(
                     kv_cache_len - self.window_size,
                     device=indices.device,

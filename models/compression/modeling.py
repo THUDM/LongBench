@@ -10,7 +10,9 @@ from transformers.models.qwen3_5.modeling_qwen3_5 import (
     Qwen3_5RMSNorm,
 )
 from transformers.models.qwen3_5.modeling_qwen3_5 import (
-    apply_rotary_pos_emb
+    apply_mask_to_padding_states,
+    apply_rotary_pos_emb,
+    l2norm,
 )
 from transformers.models.qwen3_5.modeling_qwen3_5 import (
     eager_attention_forward
@@ -66,6 +68,63 @@ def _compress_gate_cache(gate_cache, kept_indices, num_key_value_groups):
         gate_cache.shape[-1],
     )
     return gate_cache.gather(dim=2, index=kept_indices).transpose(1, 2)
+
+
+def _compress_linear_state_cache(linear_state_cache, kept_indices):
+    kept_indices = kept_indices.to(device=linear_state_cache.device, dtype=torch.long)
+    return linear_state_cache.gather(dim=2, index=kept_indices)
+
+
+def _align_linear_state_heads(linear_state_scores, num_kv_heads):
+    batch_size, num_linear_heads, seq_len = linear_state_scores.shape
+    if num_linear_heads == num_kv_heads:
+        return linear_state_scores
+    if num_linear_heads % num_kv_heads == 0:
+        group_size = num_linear_heads // num_kv_heads
+        return linear_state_scores.view(
+            batch_size,
+            num_kv_heads,
+            group_size,
+            seq_len,
+        ).max(dim=2).values
+
+    return linear_state_scores.mean(dim=1, keepdim=True).expand(
+        batch_size,
+        num_kv_heads,
+        seq_len,
+    )
+
+
+def _get_current_linear_state_scores(self, past_key_values, seq_len):
+    if past_key_values is None:
+        return None
+
+    layer_types = getattr(self.config, "layer_types", None)
+    if layer_types is None:
+        return None
+
+    linear_state_scores = []
+    prev_layer_idx = self.layer_idx - 1
+    while prev_layer_idx >= 0 and layer_types[prev_layer_idx] == "linear_attention":
+        prev_cache = past_key_values.layers[prev_layer_idx]
+        scores = getattr(prev_cache, "linear_state_scores", None)
+        if scores is not None and scores.shape[-1] >= seq_len:
+            linear_state_scores.append(scores[:, :, -seq_len:])
+        prev_layer_idx -= 1
+
+    if not linear_state_scores:
+        return None
+
+    layer_reduce = self.config.method_config.get("linear_state_layer_reduce", "mean")
+    stacked_scores = torch.stack(linear_state_scores, dim=0)
+    if layer_reduce == "mean":
+        scores = stacked_scores.mean(dim=0)
+    elif layer_reduce == "max":
+        scores = stacked_scores.max(dim=0).values
+    else:
+        raise ValueError(f"Unsupported linear_state_layer_reduce: {layer_reduce}")
+
+    return _align_linear_state_heads(scores, self.config.num_key_value_heads)
 
 
 def Qwen3_5Attention_init(
@@ -182,6 +241,37 @@ def Qwen3_5Attention_forward(
                     dim=1,
                 )
 
+        requires_linear_state_scores = getattr(
+            self.kv_cluster,
+            "requires_linear_state_scores",
+            False,
+        )
+        overlap_uses_linear_state = (
+            getattr(self.kv_cluster, "record_gate_overlap", False)
+            and self.config.method_config.get("use_linear_state", True)
+        )
+        needs_linear_state_cache = (
+            requires_linear_state_scores
+            or overlap_uses_linear_state
+        )
+        if needs_linear_state_cache:
+            current_linear_state_scores = _get_current_linear_state_scores(
+                self,
+                past_key_values,
+                query_states.shape[-2],
+            )
+            if current_linear_state_scores is not None:
+                if (
+                    not hasattr(layer_cache, "linear_state_cache")
+                    or layer_cache.linear_state_cache is None
+                ):
+                    layer_cache.linear_state_cache = current_linear_state_scores
+                else:
+                    layer_cache.linear_state_cache = torch.cat(
+                        (layer_cache.linear_state_cache, current_linear_state_scores),
+                        dim=2,
+                    )
+
         # =============== decoding-time compression start ===============
         cached_queries = layer_cache.query_cache
         if self.config.compression is None or query_states.shape[-2] > 1:
@@ -196,6 +286,12 @@ def Qwen3_5Attention_forward(
                     "gate_states": gate_states,
                     "is_prefill": query_states.shape[-2] > 1,
                 }
+            if needs_linear_state_cache:
+                update_kwargs["linear_state_scores"] = getattr(
+                    layer_cache,
+                    "linear_state_cache",
+                    None,
+                )
             key_states_compress, value_states_compress = self.kv_cluster.update_kv(
                 key_states,
                 cached_queries,
@@ -216,6 +312,15 @@ def Qwen3_5Attention_forward(
                             layer_cache.gate_cache,
                             kept_indices,
                             self.num_key_value_groups,
+                        )
+                    if (
+                        needs_linear_state_cache
+                        and kept_indices is not None
+                        and getattr(layer_cache, "linear_state_cache", None) is not None
+                    ):
+                        layer_cache.linear_state_cache = _compress_linear_state_cache(
+                            layer_cache.linear_state_cache,
+                            kept_indices,
                         )
             else:
                 past_key_values.update(
@@ -242,6 +347,12 @@ def Qwen3_5Attention_forward(
                     "gate_states": gate_states,
                     "is_prefill": query_states.shape[-2] > 1,
                 }
+            if needs_linear_state_cache:
+                update_kwargs["linear_state_scores"] = getattr(
+                    layer_cache,
+                    "linear_state_cache",
+                    None,
+                )
             key_states_compress, value_states_compress = self.kv_cluster.update_kv(
                 key_states,
                 cached_queries,
@@ -259,6 +370,15 @@ def Qwen3_5Attention_forward(
                             layer_cache.gate_cache,
                             kept_indices,
                             self.num_key_value_groups,
+                        )
+                    if (
+                        needs_linear_state_cache
+                        and kept_indices is not None
+                        and getattr(layer_cache, "linear_state_cache", None) is not None
+                    ):
+                        layer_cache.linear_state_cache = _compress_linear_state_cache(
+                            layer_cache.linear_state_cache,
+                            kept_indices,
                         )
         else:
             key_states, value_states = past_key_values.update(
@@ -288,6 +408,134 @@ def Qwen3_5Attention_forward(
     attn_output = attn_output * torch.sigmoid(gate)
     attn_output = self.o_proj(attn_output)
     return attn_output, attn_weights
+
+
+def Qwen3_5GatedDeltaNet_forward(
+    self,
+    hidden_states: torch.Tensor,
+    cache_params: Cache | None = None,
+    attention_mask: torch.Tensor | None = None,
+):
+    hidden_states = apply_mask_to_padding_states(hidden_states, attention_mask)
+
+    batch_size, seq_len, _ = hidden_states.shape
+
+    use_precomputed_states = (
+        cache_params is not None
+        and cache_params.has_previous_state(self.layer_idx)
+        and seq_len == 1
+    )
+
+    if use_precomputed_states:
+        conv_state = cache_params.layers[self.layer_idx].conv_states
+        recurrent_state = cache_params.layers[self.layer_idx].recurrent_states
+
+    mixed_qkv = self.in_proj_qkv(hidden_states)
+    mixed_qkv = mixed_qkv.transpose(1, 2)
+
+    z = self.in_proj_z(hidden_states)
+    z = z.reshape(batch_size, seq_len, -1, self.head_v_dim)
+
+    b = self.in_proj_b(hidden_states)
+    a = self.in_proj_a(hidden_states)
+
+    if use_precomputed_states:
+        mixed_qkv = self.causal_conv1d_update(
+            mixed_qkv,
+            conv_state,
+            self.conv1d.weight.squeeze(1),
+            self.conv1d.bias,
+            self.activation,
+        )
+    else:
+        if cache_params is not None:
+            conv_state = F.pad(mixed_qkv, (self.conv_kernel_size - mixed_qkv.shape[-1], 0))
+            conv_state = cache_params.update_conv_state(conv_state, self.layer_idx)
+        if self.causal_conv1d_fn is not None:
+            mixed_qkv = self.causal_conv1d_fn(
+                x=mixed_qkv,
+                weight=self.conv1d.weight.squeeze(1),
+                bias=self.conv1d.bias,
+                activation=self.activation,
+                seq_idx=None,
+            )
+        else:
+            mixed_qkv = F.silu(self.conv1d(mixed_qkv)[:, :, :seq_len])
+
+    mixed_qkv = mixed_qkv.transpose(1, 2)
+    query, key, value = torch.split(
+        mixed_qkv,
+        [
+            self.key_dim,
+            self.key_dim,
+            self.value_dim,
+        ],
+        dim=-1,
+    )
+
+    query = query.reshape(batch_size, seq_len, -1, self.head_k_dim)
+    key = key.reshape(batch_size, seq_len, -1, self.head_k_dim)
+    value = value.reshape(batch_size, seq_len, -1, self.head_v_dim)
+
+    beta = b.sigmoid()
+    g = -self.A_log.float().exp() * F.softplus(a.float() + self.dt_bias)
+    if self.num_v_heads // self.num_k_heads > 1:
+        query = query.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
+        key = key.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
+
+    if cache_params is not None:
+        key_normed = l2norm(key, dim=-1, eps=1e-6)
+        future_g = torch.flip(
+            torch.cumsum(torch.flip(g.float(), dims=[1]), dim=1),
+            dims=[1],
+        ) - g.float()
+        write_score = (
+            key_normed.float().norm(p=2, dim=-1)
+            * value.float().norm(p=2, dim=-1)
+            * beta.float()
+            * future_g.exp()
+        )
+        if attention_mask is not None and attention_mask.ndim == 2:
+            write_score = write_score * attention_mask[:, -seq_len:, None].to(write_score.dtype)
+        cache_params.layers[self.layer_idx].linear_state_scores = (
+            write_score.transpose(1, 2).detach()
+        )
+
+    if not use_precomputed_states:
+        core_attn_out, last_recurrent_state = self.chunk_gated_delta_rule(
+            query,
+            key,
+            value,
+            g=g,
+            beta=beta,
+            initial_state=None,
+            output_final_state=cache_params is not None,
+            use_qk_l2norm_in_kernel=True,
+        )
+
+    else:
+        core_attn_out, last_recurrent_state = self.recurrent_gated_delta_rule(
+            query,
+            key,
+            value,
+            g=g,
+            beta=beta,
+            initial_state=recurrent_state,
+            output_final_state=cache_params is not None,
+            use_qk_l2norm_in_kernel=True,
+        )
+
+    if cache_params is not None:
+        cache_params.update_recurrent_state(last_recurrent_state, self.layer_idx)
+
+    core_attn_out = core_attn_out.reshape(-1, self.head_v_dim)
+    z = z.reshape(-1, self.head_v_dim)
+    core_attn_out = self.norm(core_attn_out, z)
+    core_attn_out = core_attn_out.reshape(batch_size, seq_len, -1)
+
+    output = self.out_proj(core_attn_out)
+    return output
+
 
 def Qwen3_5ForCausalLM_forward(
     self,

@@ -1,8 +1,5 @@
 import torch
 
-from .gate_overlap import init_gate_overlap_recorder
-
-
 class GateKV:
     requires_gate_states = True
 
@@ -10,6 +7,10 @@ class GateKV:
         self,
         budget=128,
         window_size=8,
+        use_linear_state=True,
+        linear_state_weight=0.3,
+        linear_state_required=False,
+        linear_state_norm="rank",
         record_kept_token_indices=False,
         record_gate_overlap=False,
         layer_idx=None,
@@ -19,8 +20,15 @@ class GateKV:
         **kwargs,
     ):
         assert budget > 0, "budget must be greater than 0"
+        if not 0.0 <= linear_state_weight <= 1.0:
+            raise ValueError("linear_state_weight must be in [0, 1].")
         self.budget = budget
         self.window_size = window_size
+        self.use_linear_state = use_linear_state
+        self.linear_state_weight = linear_state_weight
+        self.linear_state_required = linear_state_required
+        self.linear_state_norm = linear_state_norm
+        self.requires_linear_state_scores = use_linear_state and linear_state_weight > 0
 
         self.layer_idx = layer_idx
         self.model_config = model_config
@@ -34,7 +42,6 @@ class GateKV:
             self.evicted_token_num = 0
             self.kept_token_indices = []
 
-        init_gate_overlap_recorder(self, "gatekv", record_gate_overlap)
 
     def _gate_scores(self, gate_states, batch_size, num_kv_heads, kv_cache_len):
         if gate_states is None:
@@ -75,12 +82,63 @@ class GateKV:
 
         return gate_scores
 
+    def _normalize_scores(self, scores):
+        if self.linear_state_norm == "rank":
+            if scores.shape[-1] == 1:
+                return torch.ones_like(scores, dtype=torch.float32)
+            ranks = scores.argsort(dim=-1).argsort(dim=-1).to(torch.float32)
+            return ranks / (scores.shape[-1] - 1)
+        if self.linear_state_norm == "minmax":
+            scores = scores.to(torch.float32)
+            min_scores = scores.min(dim=-1, keepdim=True).values
+            max_scores = scores.max(dim=-1, keepdim=True).values
+            return (scores - min_scores) / (max_scores - min_scores).clamp_min(1e-6)
+        if self.linear_state_norm == "none":
+            return scores.to(torch.float32)
+        raise ValueError(f"Unsupported linear_state_norm: {self.linear_state_norm}")
+
+    def _linear_state_scores(
+        self,
+        linear_state_scores,
+        batch_size,
+        num_kv_heads,
+        kv_cache_len,
+    ):
+        if linear_state_scores is None:
+            if self.linear_state_required:
+                raise ValueError("GateKV linear state enhancement requires linear_state_scores.")
+            return None
+        if linear_state_scores.ndim != 3:
+            raise ValueError(
+                "linear_state_scores must have shape "
+                "(batch, num_key_value_heads, kv_cache_len)."
+            )
+        if linear_state_scores.shape[0] != batch_size:
+            raise ValueError(
+                f"linear state batch size {linear_state_scores.shape[0]} does not "
+                f"match KV batch size {batch_size}."
+            )
+        if linear_state_scores.shape[1] != num_kv_heads:
+            raise ValueError(
+                f"linear state heads {linear_state_scores.shape[1]} do not match "
+                f"KV heads {num_kv_heads}."
+            )
+        if linear_state_scores.shape[2] < kv_cache_len:
+            if self.linear_state_required:
+                raise ValueError(
+                    f"linear state sequence length {linear_state_scores.shape[2]} "
+                    f"is shorter than KV cache length {kv_cache_len}."
+                )
+            return None
+        return linear_state_scores[:, :, :kv_cache_len]
+
     def update_kv(
         self,
         key_states,
         query_states,
         value_states,
         gate_states=None,
+        linear_state_scores=None,
         is_prefill=False,
     ):
         head_dim = key_states.shape[-1]
@@ -98,6 +156,22 @@ class GateKV:
             num_kv_heads,
             kv_cache_len,
         )
+
+        state_scores = None
+        if self.use_linear_state and self.linear_state_weight > 0:
+            state_scores = self._linear_state_scores(
+                linear_state_scores,
+                batch_size,
+                num_kv_heads,
+                kv_cache_len,
+            )
+
+        if state_scores is not None:
+            gate_weight = 1.0 - self.linear_state_weight
+            gate_scores = (
+                gate_weight * self._normalize_scores(gate_scores)
+                + self.linear_state_weight * self._normalize_scores(state_scores)
+            ).to(gate_scores.dtype)
 
         # shape: (bsz, num_kv_heads, budget)
         indices = gate_scores.topk(self.budget, dim=-1).indices

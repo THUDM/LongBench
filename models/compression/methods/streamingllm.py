@@ -29,6 +29,7 @@ class StreamingLLM:
         query_states,
         value_states,
         gate_states=None,
+        linear_state_scores=None,
         is_prefill=False,
     ):
         kv_cache_len = key_states.shape[-2]
@@ -58,6 +59,7 @@ class StreamingLLM:
                 gate_states=gate_states,
                 kv_cache_len=kv_cache_len,
                 is_prefill=is_prefill,
+                linear_state_scores=linear_state_scores,
             )
             # only select the first self.first_tokens tokens and the last local_window_size tokens
             key_states = torch.cat(
