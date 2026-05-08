@@ -174,6 +174,85 @@ def _get_current_linear_state_scores(self, past_key_values, seq_len):
     return _align_linear_state_heads(scores, self.config.num_key_value_heads)
 
 
+def _init_linear_recurrent_state(key, value, initial_state=None):
+    batch_size, _, num_heads, k_head_dim = key.shape
+    v_head_dim = value.shape[-1]
+    if initial_state is None:
+        return torch.zeros(
+            batch_size,
+            num_heads,
+            k_head_dim,
+            v_head_dim,
+            device=value.device,
+            dtype=torch.float32,
+        )
+    return initial_state.to(device=value.device, dtype=torch.float32).clone()
+
+
+def _linear_state_future_decay(g):
+    return (
+        torch.flip(
+            torch.cumsum(torch.flip(g, dims=[1]), dim=1),
+            dims=[1],
+        )
+        - g
+    ).exp()
+
+
+def _compute_linear_state_write_scores(
+    key,
+    value,
+    g,
+    beta,
+    initial_state=None,
+    score_type="write_norm",
+):
+    key = l2norm(key, dim=-1, eps=1e-6).to(torch.float32)
+    value = value.to(torch.float32)
+    g = g.to(torch.float32)
+    beta = beta.to(torch.float32)
+    future_decay = _linear_state_future_decay(g)
+
+    def replay(final_state=None):
+        recurrent_state = _init_linear_recurrent_state(key, value, initial_state)
+        scores = []
+        for token_idx in range(key.shape[1]):
+            k_t = key[:, token_idx]
+            v_t = value[:, token_idx]
+            g_t = g[:, token_idx].exp().unsqueeze(-1).unsqueeze(-1)
+            beta_t = beta[:, token_idx].unsqueeze(-1)
+
+            recurrent_state = recurrent_state * g_t
+            kv_mem = (recurrent_state * k_t.unsqueeze(-1)).sum(dim=-2)
+            delta = (v_t - kv_mem) * beta_t
+
+            if final_state is None:
+                score = delta.norm(p=2, dim=-1)
+            else:
+                write_norm = delta.norm(p=2, dim=-1)
+                state_norm = torch.linalg.vector_norm(final_state, dim=(-2, -1))
+                dot = (
+                    final_state
+                    * k_t.unsqueeze(-1)
+                    * delta.unsqueeze(-2)
+                ).sum(dim=(-2, -1))
+                score = dot.abs() / (write_norm * state_norm).clamp_min(1e-6)
+                score = score * write_norm
+
+            scores.append(score * future_decay[:, token_idx])
+            recurrent_state = recurrent_state + k_t.unsqueeze(-1) * delta.unsqueeze(-2)
+        return torch.stack(scores, dim=1), recurrent_state
+
+    if score_type == "write_norm":
+        scores, _ = replay()
+        return scores
+    if score_type == "state_similarity":
+        _, final_state = replay()
+        scores, _ = replay(final_state=final_state)
+        return scores
+    raise ValueError(f"Unsupported linear_state_score_type: {score_type}")
+
+
 def Qwen3_5Attention_init(
     self, config: Qwen3_5Config, layer_idx: int, compression_config: dict
 ):
@@ -530,23 +609,38 @@ def Qwen3_5GatedDeltaNet_forward(
         query = query.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
         key = key.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
 
+    linear_state_score_type = getattr(
+        self,
+        "compression_method_config",
+        {},
+    ).get("linear_state_score_type", "write_norm")
+    if linear_state_score_type not in {
+        "write_norm",
+        "output_norm",
+        "state_similarity",
+    }:
+        raise ValueError(
+            f"Unsupported linear_state_score_type: {linear_state_score_type}"
+        )
+
     if cache_params is not None:
-        key_normed = l2norm(key, dim=-1, eps=1e-6)
-        future_g = torch.flip(
-            torch.cumsum(torch.flip(g.float(), dims=[1]), dim=1),
-            dims=[1],
-        ) - g.float()
-        write_score = (
-            key_normed.float().norm(p=2, dim=-1)
-            * value.float().norm(p=2, dim=-1)
-            * beta.float()
-            * future_g.exp()
-        )
-        if attention_mask is not None and attention_mask.ndim == 2:
-            write_score = write_score * attention_mask[:, -seq_len:, None].to(write_score.dtype)
-        cache_params.layers[self.layer_idx].linear_state_scores = (
-            write_score.transpose(1, 2).detach()
-        )
+        if linear_state_score_type in {"write_norm", "state_similarity"}:
+            initial_score_state = recurrent_state if use_precomputed_states else None
+            linear_state_score = _compute_linear_state_write_scores(
+                key,
+                value,
+                g,
+                beta,
+                initial_state=initial_score_state,
+                score_type=linear_state_score_type,
+            )
+            if attention_mask is not None and attention_mask.ndim == 2:
+                linear_state_score = linear_state_score * attention_mask[:, -seq_len:, None].to(
+                    linear_state_score.dtype
+                )
+            cache_params.layers[self.layer_idx].linear_state_scores = (
+                linear_state_score.transpose(1, 2).detach()
+            )
 
     if not use_precomputed_states:
         core_attn_out, last_recurrent_state = self.chunk_gated_delta_rule(
@@ -570,6 +664,16 @@ def Qwen3_5GatedDeltaNet_forward(
             initial_state=recurrent_state,
             output_final_state=cache_params is not None,
             use_qk_l2norm_in_kernel=True,
+        )
+
+    if cache_params is not None and linear_state_score_type == "output_norm":
+        linear_state_score = core_attn_out.float().norm(p=2, dim=-1)
+        if attention_mask is not None and attention_mask.ndim == 2:
+            linear_state_score = linear_state_score * attention_mask[:, -seq_len:, None].to(
+                linear_state_score.dtype
+            )
+        cache_params.layers[self.layer_idx].linear_state_scores = (
+            linear_state_score.transpose(1, 2).detach()
         )
 
     if cache_params is not None:

@@ -59,6 +59,7 @@ def build_compression_config(
     linear_state_layer_range="all",
     linear_state_layer_reduce="mean",
     linear_state_norm="rank",
+    linear_state_score_type="write_norm",
 ):
     method_config = {
         "budget": compression_budget,
@@ -74,6 +75,7 @@ def build_compression_config(
         "linear_state_layer_range": linear_state_layer_range,
         "linear_state_layer_reduce": linear_state_layer_reduce,
         "linear_state_norm": linear_state_norm,
+        "linear_state_score_type": linear_state_score_type,
     }
 
     return {
@@ -113,6 +115,7 @@ def load_model_and_tokenizer(
     linear_state_layer_range="all",
     linear_state_layer_reduce="mean",
     linear_state_norm="rank",
+    linear_state_score_type="write_norm",
 ):
     model_path = get_model_path(model_name)
     tokenizer = AutoTokenizer.from_pretrained(
@@ -157,6 +160,7 @@ def load_model_and_tokenizer(
                 linear_state_layer_range=linear_state_layer_range,
                 linear_state_layer_reduce=linear_state_layer_reduce,
                 linear_state_norm=linear_state_norm,
+                linear_state_score_type=linear_state_score_type,
             )
         )
         model = AutoModelForCausalLM.from_pretrained(model_path, **model_kwargs)
@@ -347,6 +351,15 @@ def validate_args(args):
         raise ValueError("--linear_state_layer_reduce must be one of: mean, max.")
     if args.linear_state_norm not in {"rank", "minmax", "none"}:
         raise ValueError("--linear_state_norm must be one of: rank, minmax, none.")
+    if args.linear_state_score_type not in {
+        "write_norm",
+        "output_norm",
+        "state_similarity",
+    }:
+        raise ValueError(
+            "--linear_state_score_type must be one of: "
+            "write_norm, output_norm, state_similarity."
+        )
     validate_linear_state_layer_range(args.linear_state_layer_range)
     if not args.attn_heatmap_mode:
         return
@@ -370,6 +383,7 @@ def get_pred(data, args, fout, out_file):
         linear_state_layer_range=args.linear_state_layer_range,
         linear_state_layer_reduce=args.linear_state_layer_reduce,
         linear_state_norm=args.linear_state_norm,
+        linear_state_score_type=args.linear_state_score_type,
     )
     attn_run_writer = build_attn_run_writer(args, out_file, model)
     for sample_index, item in enumerate(tqdm(data)):
@@ -531,6 +545,7 @@ if __name__ == "__main__":
     parser.add_argument("--linear_state_layer_range", type=str, default="all", help="Preceding linear-attention layers to aggregate: all, N for only the Nth nearest layer, :N for nearest N layers, or 1-indexed start:end from nearest to farthest.")
     parser.add_argument("--linear_state_layer_reduce", type=str, default="mean", choices=["mean", "max"], help="How to reduce scores from preceding linear-attention layers.")
     parser.add_argument("--linear_state_norm", type=str, default="rank", choices=["rank", "minmax", "none"], help="Normalization used before gate/linear-state score fusion.")
+    parser.add_argument("--linear_state_score_type", type=str, default="write_norm", choices=["write_norm", "output_norm", "state_similarity"], help="Token importance definition for linear-state enhancement.")
     parser.add_argument("--gate_overlap_dir", type=str, default="output_dir/results_longbench/gate_overlaps")
     parser.add_argument("--gate_overlap_interpolation", type=str, default="bicubic", help="Matplotlib interpolation mode for the gate/method overlap heatmap.")
     args = parser.parse_args()
