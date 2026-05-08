@@ -56,6 +56,7 @@ def build_compression_config(
     use_linear_state=True,
     linear_state_weight=0.3,
     linear_state_required=False,
+    linear_state_layer_range="all",
     linear_state_layer_reduce="mean",
     linear_state_norm="rank",
 ):
@@ -70,6 +71,7 @@ def build_compression_config(
         "use_linear_state": use_linear_state,
         "linear_state_weight": linear_state_weight,
         "linear_state_required": linear_state_required,
+        "linear_state_layer_range": linear_state_layer_range,
         "linear_state_layer_reduce": linear_state_layer_reduce,
         "linear_state_norm": linear_state_norm,
     }
@@ -108,6 +110,7 @@ def load_model_and_tokenizer(
     use_linear_state=True,
     linear_state_weight=0.3,
     linear_state_required=False,
+    linear_state_layer_range="all",
     linear_state_layer_reduce="mean",
     linear_state_norm="rank",
 ):
@@ -151,6 +154,7 @@ def load_model_and_tokenizer(
                 use_linear_state=use_linear_state,
                 linear_state_weight=linear_state_weight,
                 linear_state_required=linear_state_required,
+                linear_state_layer_range=linear_state_layer_range,
                 linear_state_layer_reduce=linear_state_layer_reduce,
                 linear_state_norm=linear_state_norm,
             )
@@ -299,6 +303,29 @@ def build_attn_run_writer(args, out_file, model):
     )
 
 
+def validate_linear_state_layer_range(layer_range):
+    if layer_range == "all":
+        return
+    try:
+        if ":" not in layer_range:
+            if int(layer_range) < 1:
+                raise ValueError
+            return
+
+        if layer_range.count(":") != 1:
+            raise ValueError
+        start_text, end_text = layer_range.split(":", 1)
+        start = int(start_text) if start_text else 1
+        end = int(end_text) if end_text else None
+        if start < 1 or (end is not None and end < start):
+            raise ValueError
+    except ValueError as exc:
+        raise ValueError(
+            "--linear_state_layer_range must be 'all', 'N', or 'start:end' "
+            "with 1 <= start <= end."
+        ) from exc
+
+
 def validate_args(args):
     if args.model_maxlen < 1:
         raise ValueError("--model_maxlen must be at least 1.")
@@ -320,6 +347,7 @@ def validate_args(args):
         raise ValueError("--linear_state_layer_reduce must be one of: mean, max.")
     if args.linear_state_norm not in {"rank", "minmax", "none"}:
         raise ValueError("--linear_state_norm must be one of: rank, minmax, none.")
+    validate_linear_state_layer_range(args.linear_state_layer_range)
     if not args.attn_heatmap_mode:
         return
     if not is_qwen_attn_heatmap_model(args.model):
@@ -339,6 +367,7 @@ def get_pred(data, args, fout, out_file):
         use_linear_state=args.use_linear_state,
         linear_state_weight=args.linear_state_weight,
         linear_state_required=args.linear_state_required,
+        linear_state_layer_range=args.linear_state_layer_range,
         linear_state_layer_reduce=args.linear_state_layer_reduce,
         linear_state_norm=args.linear_state_norm,
     )
@@ -499,6 +528,7 @@ if __name__ == "__main__":
     parser.add_argument("--use_linear_state", action=argparse.BooleanOptionalAction, default=True, help="Enable GatedDeltaNet linear-state score enhancement in compression method config.")
     parser.add_argument("--linear_state_weight", type=float, default=0.3, help="Weight of linear-state score when fusing with gate score.")
     parser.add_argument("--linear_state_required", action="store_true", help="Raise an error if linear-state scores are unavailable.")
+    parser.add_argument("--linear_state_layer_range", type=str, default="all", help="Range of preceding linear-attention layers to aggregate: all, N, or 1-indexed start:end from nearest to farthest.")
     parser.add_argument("--linear_state_layer_reduce", type=str, default="mean", choices=["mean", "max"], help="How to reduce scores from preceding linear-attention layers.")
     parser.add_argument("--linear_state_norm", type=str, default="rank", choices=["rank", "minmax", "none"], help="Normalization used before gate/linear-state score fusion.")
     parser.add_argument("--gate_overlap_dir", type=str, default="output_dir/results_longbench/gate_overlaps")

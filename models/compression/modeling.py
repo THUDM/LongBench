@@ -95,6 +95,39 @@ def _align_linear_state_heads(linear_state_scores, num_kv_heads):
     )
 
 
+def _parse_linear_state_layer_range(layer_range):
+    if layer_range is None or layer_range == "all":
+        return 1, None
+    if isinstance(layer_range, int):
+        if layer_range < 1:
+            raise ValueError("linear_state_layer_range must be positive.")
+        return 1, layer_range
+
+    layer_range = str(layer_range).strip()
+    if not layer_range:
+        raise ValueError("linear_state_layer_range cannot be empty.")
+    try:
+        if ":" not in layer_range:
+            end = int(layer_range)
+            if end < 1:
+                raise ValueError
+            return 1, end
+
+        if layer_range.count(":") != 1:
+            raise ValueError("linear_state_layer_range must be positive.")
+        start_text, end_text = layer_range.split(":", 1)
+        start = int(start_text) if start_text else 1
+        end = int(end_text) if end_text else None
+        if start < 1 or (end is not None and end < start):
+            raise ValueError
+        return start, end
+    except ValueError as exc:
+        raise ValueError(
+            "linear_state_layer_range must be 'all', 'N', or 'start:end' "
+            "with 1 <= start <= end."
+        ) from exc
+
+
 def _get_current_linear_state_scores(self, past_key_values, seq_len):
     if past_key_values is None:
         return None
@@ -103,13 +136,21 @@ def _get_current_linear_state_scores(self, past_key_values, seq_len):
     if layer_types is None:
         return None
 
+    layer_start, layer_end = _parse_linear_state_layer_range(
+        self.config.method_config.get("linear_state_layer_range", "all")
+    )
     linear_state_scores = []
     prev_layer_idx = self.layer_idx - 1
+    linear_layer_offset = 0
     while prev_layer_idx >= 0 and layer_types[prev_layer_idx] == "linear_attention":
+        linear_layer_offset += 1
+        if layer_end is not None and linear_layer_offset > layer_end:
+            break
         prev_cache = past_key_values.layers[prev_layer_idx]
-        scores = getattr(prev_cache, "linear_state_scores", None)
-        if scores is not None and scores.shape[-1] >= seq_len:
-            linear_state_scores.append(scores[:, :, -seq_len:])
+        if linear_layer_offset >= layer_start:
+            scores = getattr(prev_cache, "linear_state_scores", None)
+            if scores is not None and scores.shape[-1] >= seq_len:
+                linear_state_scores.append(scores[:, :, -seq_len:])
         prev_layer_idx -= 1
 
     if not linear_state_scores:
