@@ -49,18 +49,34 @@ def truncate_prompt(prompt, tokenizer, max_input_len):
         prompt = tokenizer.decode(input_ids, skip_special_tokens=True)
     return prompt
 
-def build_compression_config(compression_mode, compression_budget, gate_overlap_mode=False):
+def build_compression_config(
+    compression_mode,
+    compression_budget,
+    gate_overlap_mode=False,
+    use_linear_state=True,
+    linear_state_weight=0.3,
+    linear_state_required=False,
+    linear_state_layer_reduce="mean",
+    linear_state_norm="rank",
+):
+    method_config = {
+        "budget": compression_budget,
+        "window_size": 8,
+        "mix_lambda": 0.07,
+        "retain_ratio": 0.2,
+        "retain_direction": "last",
+        "first_tokens": 4,
+        "record_gate_overlap": gate_overlap_mode,
+        "use_linear_state": use_linear_state,
+        "linear_state_weight": linear_state_weight,
+        "linear_state_required": linear_state_required,
+        "linear_state_layer_reduce": linear_state_layer_reduce,
+        "linear_state_norm": linear_state_norm,
+    }
+
     return {
         "method": compression_mode,
-        "method_config": {
-            "budget": compression_budget,
-            "window_size": 8,
-            "mix_lambda": 0.07,
-            "retain_ratio": 0.2,
-            "retain_direction": "last",
-            "first_tokens": 4,
-            "record_gate_overlap": gate_overlap_mode,
-        },
+        "method_config": method_config,
         "compression": None,
         "update_kv": True,
     }
@@ -89,6 +105,11 @@ def load_model_and_tokenizer(
     compression_mode=None,
     compression_budget=4096,
     gate_overlap_mode=False,
+    use_linear_state=True,
+    linear_state_weight=0.3,
+    linear_state_required=False,
+    linear_state_layer_reduce="mean",
+    linear_state_norm="rank",
 ):
     model_path = get_model_path(model_name)
     tokenizer = AutoTokenizer.from_pretrained(
@@ -127,6 +148,11 @@ def load_model_and_tokenizer(
                 compression_mode,
                 compression_budget,
                 gate_overlap_mode=gate_overlap_mode,
+                use_linear_state=use_linear_state,
+                linear_state_weight=linear_state_weight,
+                linear_state_required=linear_state_required,
+                linear_state_layer_reduce=linear_state_layer_reduce,
+                linear_state_norm=linear_state_norm,
             )
         )
         model = AutoModelForCausalLM.from_pretrained(model_path, **model_kwargs)
@@ -288,6 +314,12 @@ def validate_args(args):
         raise ValueError("--gate_overlap_mode requires --compression_mode.")
     if args.gate_overlap_mode and args.n_proc != 1:
         raise ValueError("--gate_overlap_mode currently requires --n_proc 1.")
+    if not 0.0 <= args.linear_state_weight <= 1.0:
+        raise ValueError("--linear_state_weight must be in [0, 1].")
+    if args.linear_state_layer_reduce not in {"mean", "max"}:
+        raise ValueError("--linear_state_layer_reduce must be one of: mean, max.")
+    if args.linear_state_norm not in {"rank", "minmax", "none"}:
+        raise ValueError("--linear_state_norm must be one of: rank, minmax, none.")
     if not args.attn_heatmap_mode:
         return
     if not is_qwen_attn_heatmap_model(args.model):
@@ -304,6 +336,11 @@ def get_pred(data, args, fout, out_file):
         compression_mode=args.compression_mode,
         compression_budget=args.compression_budget,
         gate_overlap_mode=args.gate_overlap_mode,
+        use_linear_state=args.use_linear_state,
+        linear_state_weight=args.linear_state_weight,
+        linear_state_required=args.linear_state_required,
+        linear_state_layer_reduce=args.linear_state_layer_reduce,
+        linear_state_norm=args.linear_state_norm,
     )
     attn_run_writer = build_attn_run_writer(args, out_file, model)
     for sample_index, item in enumerate(tqdm(data)):
@@ -459,6 +496,11 @@ if __name__ == "__main__":
     parser.add_argument("--attn_heatmap_dir", type=str, default="output_dir/results_longbench/attn_heatmaps")
     parser.add_argument("--attn_max_prefill_tokens", type=int, default=None, help="Skip attention heatmap capture when the prefill token count exceeds this cap.")
     parser.add_argument("--gate_overlap_mode", "--gate_method_overlap_mode", action="store_true", help="Record gate topk overlap with the active compression method and save one layer/head heatmap per sample.")
+    parser.add_argument("--use_linear_state", action=argparse.BooleanOptionalAction, default=True, help="Enable GatedDeltaNet linear-state score enhancement in compression method config.")
+    parser.add_argument("--linear_state_weight", type=float, default=0.3, help="Weight of linear-state score when fusing with gate score.")
+    parser.add_argument("--linear_state_required", action="store_true", help="Raise an error if linear-state scores are unavailable.")
+    parser.add_argument("--linear_state_layer_reduce", type=str, default="mean", choices=["mean", "max"], help="How to reduce scores from preceding linear-attention layers.")
+    parser.add_argument("--linear_state_norm", type=str, default="rank", choices=["rank", "minmax", "none"], help="Normalization used before gate/linear-state score fusion.")
     parser.add_argument("--gate_overlap_dir", type=str, default="output_dir/results_longbench/gate_overlaps")
     parser.add_argument("--gate_overlap_interpolation", type=str, default="bicubic", help="Matplotlib interpolation mode for the gate/method overlap heatmap.")
     args = parser.parse_args()
