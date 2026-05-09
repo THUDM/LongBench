@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import contextlib
 from typing import List, Optional, Tuple, Union, Callable
 from transformers.utils import logging
 from transformers.processing_utils import Unpack
@@ -44,13 +43,6 @@ KV_COMPRESSION_MAP = {
 }
 
 logger = logging.get_logger(__name__)
-
-
-def _cuda_device_context(tensor):
-    if tensor.is_cuda:
-        return torch.cuda.device(tensor.device)
-    return contextlib.nullcontext()
-
 
 def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     """
@@ -207,7 +199,6 @@ def _linear_state_future_decay(g):
     ).exp()
 
 
-@torch.no_grad()
 def _compute_linear_state_write_scores(
     key,
     value,
@@ -216,95 +207,62 @@ def _compute_linear_state_write_scores(
     initial_state=None,
     score_type="write_norm",
 ):
-    score_device = key.device
-    key = l2norm(key, dim=-1, eps=1e-6).to(
-        device=score_device,
-        dtype=torch.float32,
-    ).contiguous()
-    value = value.to(device=score_device, dtype=torch.float32).contiguous()
-    g = g.to(device=score_device, dtype=torch.float32).contiguous()
-    beta = beta.to(device=score_device, dtype=torch.float32).contiguous()
-    future_decay = _linear_state_future_decay(g)
-    if score_type not in {"write_norm", "state_similarity"}:
-        raise ValueError(f"Unsupported linear_state_score_type: {score_type}")
+    # key = l2norm(key, dim=-1, eps=1e-6).to(torch.float32)
+    # value = value.to(torch.float32)
+    # g = g.to(torch.float32)
+    # beta = beta.to(torch.float32)
+    # future_decay = _linear_state_future_decay(g)
 
-    def score_from_delta(delta, final_state=None):
-        write_norm = delta.norm(p=2, dim=-1)
-        if final_state is None:
-            return write_norm
+    key_normed = l2norm(key, dim=-1, eps=1e-6)
+    future_g = torch.flip(
+        torch.cumsum(torch.flip(g.float(), dims=[1]), dim=1),
+        dims=[1],
+    ) - g.float()
+    write_score = (
+        key_normed.float().norm(p=2, dim=-1)
+        * value.float().norm(p=2, dim=-1)
+        * beta.float()
+        * future_g.exp()
+    )
 
-        state_norm = torch.linalg.vector_norm(final_state, dim=(-2, -1))
-        dot = (
-            final_state[:, None]
-            * key.unsqueeze(-1)
-            * delta.unsqueeze(-2)
-        ).sum(dim=(-2, -1))
-        score = dot.abs() / (write_norm * state_norm[:, None, :]).clamp_min(1e-6)
-        return score * write_norm
+    # def replay(final_state=None):
+    #     recurrent_state = _init_linear_recurrent_state(key, value, initial_state)
+    #     scores = []
+    #     for token_idx in range(key.shape[1]):
+    #         k_t = key[:, token_idx]
+    #         v_t = value[:, token_idx]
+    #         g_t = g[:, token_idx].exp().unsqueeze(-1).unsqueeze(-1)
+    #         beta_t = beta[:, token_idx].unsqueeze(-1)
 
-    def chunk_replay():
-        if not key.is_cuda:
-            return None
+    #         recurrent_state = recurrent_state * g_t
+    #         kv_mem = (recurrent_state * k_t.unsqueeze(-1)).sum(dim=-2)
+    #         delta = (v_t - kv_mem) * beta_t
 
-        try:
-            from fla.ops.common.chunk_delta_h import chunk_gated_delta_rule_fwd_h
-            from fla.ops.gated_delta_rule.chunk_fwd import chunk_gated_delta_rule_fwd_intra
-            from fla.ops.utils import chunk_local_cumsum
-        except Exception:
-            return None
+    #         if final_state is None:
+    #             score = delta.norm(p=2, dim=-1)
+    #         else:
+    #             write_norm = delta.norm(p=2, dim=-1)
+    #             state_norm = torch.linalg.vector_norm(final_state, dim=(-2, -1))
+    #             dot = (
+    #                 final_state
+    #                 * k_t.unsqueeze(-1)
+    #                 * delta.unsqueeze(-2)
+    #             ).sum(dim=(-2, -1))
+    #             score = dot.abs() / (write_norm * state_norm).clamp_min(1e-6)
+    #             score = score * write_norm
 
-        with _cuda_device_context(key):
-            g_cumsum = chunk_local_cumsum(g, chunk_size=64, scale=None)
-            w, u, _ = chunk_gated_delta_rule_fwd_intra(
-                k=key,
-                v=value,
-                g=g_cumsum,
-                beta=beta,
-                use_exp2=False,
-            )
-            _, delta, final_state = chunk_gated_delta_rule_fwd_h(
-                k=key,
-                w=w,
-                u=u,
-                g=g_cumsum,
-                initial_state=_init_linear_recurrent_state(key, value, initial_state),
-                output_final_state=score_type == "state_similarity",
-                chunk_size=64,
-                save_new_value=True,
-                use_exp2=False,
-            )
+    #         scores.append(score * future_decay[:, token_idx])
+    #         recurrent_state = recurrent_state + k_t.unsqueeze(-1) * delta.unsqueeze(-2)
+    #     return torch.stack(scores, dim=1), recurrent_state
 
-        return delta, final_state
-
-    chunk_result = chunk_replay()
-    if chunk_result is not None:
-        delta, final_state = chunk_result
-        if score_type == "write_norm":
-            return score_from_delta(delta) * future_decay
-        return score_from_delta(delta, final_state=final_state) * future_decay
-
-    def replay_delta():
-        recurrent_state = _init_linear_recurrent_state(key, value, initial_state)
-        deltas = []
-        for token_idx in range(key.shape[1]):
-            k_t = key[:, token_idx]
-            v_t = value[:, token_idx]
-            g_t = g[:, token_idx].exp().unsqueeze(-1).unsqueeze(-1)
-            beta_t = beta[:, token_idx].unsqueeze(-1)
-
-            recurrent_state = recurrent_state * g_t
-            kv_mem = (recurrent_state * k_t.unsqueeze(-1)).sum(dim=-2)
-            delta = (v_t - kv_mem) * beta_t
-
-            deltas.append(delta)
-            recurrent_state = recurrent_state + k_t.unsqueeze(-1) * delta.unsqueeze(-2)
-        return torch.stack(deltas, dim=1), recurrent_state
-
-    delta, final_state = replay_delta()
     if score_type == "write_norm":
-        return score_from_delta(delta) * future_decay
+        scores = write_score
+        return scores
     if score_type == "state_similarity":
-        return score_from_delta(delta, final_state=final_state) * future_decay
+        _, final_state = replay()
+        scores, _ = replay(final_state=final_state)
+        return scores
+    raise ValueError(f"Unsupported linear_state_score_type: {score_type}")
 
 
 def Qwen3_5Attention_init(
@@ -573,20 +531,16 @@ def Qwen3_5Attention_forward(
         eager_attention_forward,
     )
 
-    if attention_mask is not None and attention_mask.device != query_states.device:
-        attention_mask = attention_mask.to(query_states.device)
-
-    with _cuda_device_context(query_states):
-        attn_output, attn_weights = attention_interface(
-            self,
-            query_states,
-            key_states,
-            value_states,
-            attention_mask,
-            dropout=0.0 if not self.training else self.attention_dropout,
-            scaling=self.scaling,
-            **kwargs,
-        )
+    attn_output, attn_weights = attention_interface(
+        self,
+        query_states,
+        key_states,
+        value_states,
+        attention_mask,
+        dropout=0.0 if not self.training else self.attention_dropout,
+        scaling=self.scaling,
+        **kwargs,
+    )
 
     attn_output = attn_output.reshape(*input_shape, -1).contiguous()
     attn_output = attn_output * torch.sigmoid(gate)
@@ -611,15 +565,8 @@ def Qwen3_5GatedDeltaNet_forward(
     )
 
     if use_precomputed_states:
-        layer_cache = cache_params.layers[self.layer_idx]
-        conv_state = layer_cache.conv_states
-        recurrent_state = layer_cache.recurrent_states
-        if conv_state.device != hidden_states.device:
-            conv_state = conv_state.to(hidden_states.device)
-            layer_cache.conv_states = conv_state
-        if recurrent_state.device != hidden_states.device:
-            recurrent_state = recurrent_state.to(hidden_states.device)
-            layer_cache.recurrent_states = recurrent_state
+        conv_state = cache_params.layers[self.layer_idx].conv_states
+        recurrent_state = cache_params.layers[self.layer_idx].recurrent_states
 
     mixed_qkv = self.in_proj_qkv(hidden_states)
     mixed_qkv = mixed_qkv.transpose(1, 2)
@@ -630,31 +577,26 @@ def Qwen3_5GatedDeltaNet_forward(
     b = self.in_proj_b(hidden_states)
     a = self.in_proj_a(hidden_states)
 
-    conv_weight = self.conv1d.weight.squeeze(1)
-    conv_bias = self.conv1d.bias
-
     if use_precomputed_states:
-        with _cuda_device_context(mixed_qkv):
-            mixed_qkv = self.causal_conv1d_update(
-                mixed_qkv,
-                conv_state,
-                conv_weight,
-                conv_bias,
-                self.activation,
-            )
+        mixed_qkv = self.causal_conv1d_update(
+            mixed_qkv,
+            conv_state,
+            self.conv1d.weight.squeeze(1),
+            self.conv1d.bias,
+            self.activation,
+        )
     else:
         if cache_params is not None:
             conv_state = F.pad(mixed_qkv, (self.conv_kernel_size - mixed_qkv.shape[-1], 0))
             conv_state = cache_params.update_conv_state(conv_state, self.layer_idx)
         if self.causal_conv1d_fn is not None:
-            with _cuda_device_context(mixed_qkv):
-                mixed_qkv = self.causal_conv1d_fn(
-                    x=mixed_qkv,
-                    weight=conv_weight,
-                    bias=conv_bias,
-                    activation=self.activation,
-                    seq_idx=None,
-                )
+            mixed_qkv = self.causal_conv1d_fn(
+                x=mixed_qkv,
+                weight=self.conv1d.weight.squeeze(1),
+                bias=self.conv1d.bias,
+                activation=self.activation,
+                seq_idx=None,
+            )
         else:
             mixed_qkv = F.silu(self.conv1d(mixed_qkv)[:, :, :seq_len])
 
@@ -706,45 +648,41 @@ def Qwen3_5GatedDeltaNet_forward(
             )
             if attention_mask is not None and attention_mask.ndim == 2:
                 linear_state_score = linear_state_score * attention_mask[:, -seq_len:, None].to(
-                    device=linear_state_score.device,
-                    dtype=linear_state_score.dtype,
+                    linear_state_score.dtype
                 )
             cache_params.layers[self.layer_idx].linear_state_scores = (
                 linear_state_score.transpose(1, 2).detach()
             )
 
     if not use_precomputed_states:
-        with _cuda_device_context(query):
-            core_attn_out, last_recurrent_state = self.chunk_gated_delta_rule(
-                query,
-                key,
-                value,
-                g=g,
-                beta=beta,
-                initial_state=None,
-                output_final_state=cache_params is not None,
-                use_qk_l2norm_in_kernel=True,
-            )
+        core_attn_out, last_recurrent_state = self.chunk_gated_delta_rule(
+            query,
+            key,
+            value,
+            g=g,
+            beta=beta,
+            initial_state=None,
+            output_final_state=cache_params is not None,
+            use_qk_l2norm_in_kernel=True,
+        )
 
     else:
-        with _cuda_device_context(query):
-            core_attn_out, last_recurrent_state = self.recurrent_gated_delta_rule(
-                query,
-                key,
-                value,
-                g=g,
-                beta=beta,
-                initial_state=recurrent_state,
-                output_final_state=cache_params is not None,
-                use_qk_l2norm_in_kernel=True,
-            )
+        core_attn_out, last_recurrent_state = self.recurrent_gated_delta_rule(
+            query,
+            key,
+            value,
+            g=g,
+            beta=beta,
+            initial_state=recurrent_state,
+            output_final_state=cache_params is not None,
+            use_qk_l2norm_in_kernel=True,
+        )
 
     if cache_params is not None and linear_state_score_type == "output_norm":
         linear_state_score = core_attn_out.float().norm(p=2, dim=-1)
         if attention_mask is not None and attention_mask.ndim == 2:
             linear_state_score = linear_state_score * attention_mask[:, -seq_len:, None].to(
-                device=linear_state_score.device,
-                dtype=linear_state_score.dtype,
+                linear_state_score.dtype
             )
         cache_params.layers[self.layer_idx].linear_state_scores = (
             linear_state_score.transpose(1, 2).detach()
