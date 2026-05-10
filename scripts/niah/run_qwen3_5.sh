@@ -6,11 +6,15 @@ MODEL_PATH="Qwen/Qwen3.5-9B"  # e.g., meta-llama/Llama-3.1-8B-Instruct
 ATTN="flash_attention_2"
 
 EXPERIMENTS=(
-    "FullKV 128 Qwen3.5"
+    "snapkv 1024 Qwen3.5"
 )
 
-CUDA_DEVICES=("0" "1" "2" "3")
-NUM_GPUS=${#CUDA_DEVICES[@]}
+# Each entry is one visible GPU group for a single process.
+# device_map="auto" in run_niah.py will shard the model over the GPUs in that group.
+CUDA_DEVICE_GROUPS=("0,1,2,3")
+# For concurrent multi-GPU jobs, split the groups, e.g.:
+# CUDA_DEVICE_GROUPS=("0,1" "2,3")
+NUM_GPU_GROUPS=${#CUDA_DEVICE_GROUPS[@]}
 IDX=0
 PIDS=()
 
@@ -37,9 +41,10 @@ trap cleanup INT TERM
 
 for exp in "${EXPERIMENTS[@]}"; do
     read -r method capacity provider <<< "$exp"
-    gpu=${CUDA_DEVICES[$((IDX % NUM_GPUS))]}
+    gpu_group=${CUDA_DEVICE_GROUPS[$((IDX % NUM_GPU_GROUPS))]}
 
     compression_args=()
+    linear_state_args=()
     version_args=(--model_version "Qwen3.5_FullKV_${capacity}")
     if [[ "${method}" != "FullKV" ]]; then
         compression_args=(
@@ -49,20 +54,29 @@ for exp in "${EXPERIMENTS[@]}"; do
         )
         version_args=(--model_version "Qwen3.5")
     fi
+    if [[ "${method}" == "gatekv" ]]; then
+        linear_state_args=(
+            --use_linear_state
+            --linear_state_weight 1
+            --linear_state_norm rank
+            --linear_state_layer_range 1
+            --linear_state_score_type "write_norm"
+        )
+    fi
 
-    export CUDA_VISIBLE_DEVICES=$gpu
-    python -u run_niah.py \
-        --s_len 1000 --e_len 32001 \
+    CUDA_VISIBLE_DEVICES="${gpu_group}" python -u run_niah.py \
+        --s_len 5000 --e_len 50001 \
         --model_provider "${provider}" \
         --model_name "${MODEL_PATH}" \
         --attn_implementation "${ATTN}" \
-        --step 1000 \
+        --step 5000 \
         "${version_args[@]}" \
-        "${compression_args[@]}" &
+        "${compression_args[@]}" \
+        "${linear_state_args[@]}" &
     PIDS+=("$!")
 
     IDX=$((IDX + 1))
-    if (( IDX % NUM_GPUS == 0 )); then
+    if (( IDX % NUM_GPU_GROUPS == 0 )); then
         wait_for_batch
     fi
 done
