@@ -53,7 +53,7 @@ def build_compression_config(
     compression_mode,
     compression_budget,
     gate_overlap_mode=False,
-    use_linear_state=True,
+    use_linear_state=False,
     linear_state_weight=0.3,
     linear_state_required=False,
     linear_state_layer_range="all",
@@ -70,13 +70,18 @@ def build_compression_config(
         "first_tokens": 4,
         "record_gate_overlap": gate_overlap_mode,
         "use_linear_state": use_linear_state,
-        "linear_state_weight": linear_state_weight,
-        "linear_state_required": linear_state_required,
-        "linear_state_layer_range": linear_state_layer_range,
-        "linear_state_layer_reduce": linear_state_layer_reduce,
-        "linear_state_norm": linear_state_norm,
-        "linear_state_score_type": linear_state_score_type,
     }
+    if use_linear_state:
+        method_config.update(
+            {
+                "linear_state_weight": linear_state_weight,
+                "linear_state_required": linear_state_required,
+                "linear_state_layer_range": linear_state_layer_range,
+                "linear_state_layer_reduce": linear_state_layer_reduce,
+                "linear_state_norm": linear_state_norm,
+                "linear_state_score_type": linear_state_score_type,
+            }
+        )
 
     return {
         "method": compression_mode,
@@ -109,7 +114,7 @@ def load_model_and_tokenizer(
     compression_mode=None,
     compression_budget=4096,
     gate_overlap_mode=False,
-    use_linear_state=True,
+    use_linear_state=False,
     linear_state_weight=0.3,
     linear_state_required=False,
     linear_state_layer_range="all",
@@ -345,22 +350,23 @@ def validate_args(args):
         raise ValueError("--gate_overlap_mode requires --compression_mode.")
     if args.gate_overlap_mode and args.n_proc != 1:
         raise ValueError("--gate_overlap_mode currently requires --n_proc 1.")
-    if not 0.0 <= args.linear_state_weight <= 1.0:
-        raise ValueError("--linear_state_weight must be in [0, 1].")
-    if args.linear_state_layer_reduce not in {"mean", "max"}:
-        raise ValueError("--linear_state_layer_reduce must be one of: mean, max.")
-    if args.linear_state_norm not in {"rank", "minmax", "none"}:
-        raise ValueError("--linear_state_norm must be one of: rank, minmax, none.")
-    if args.linear_state_score_type not in {
-        "write_norm",
-        "output_norm",
-        "state_similarity",
-    }:
-        raise ValueError(
-            "--linear_state_score_type must be one of: "
-            "write_norm, output_norm, state_similarity."
-        )
-    validate_linear_state_layer_range(args.linear_state_layer_range)
+    if args.use_linear_state:
+        if not 0.0 <= args.linear_state_weight <= 1.0:
+            raise ValueError("--linear_state_weight must be in [0, 1].")
+        if args.linear_state_layer_reduce not in {"mean", "max"}:
+            raise ValueError("--linear_state_layer_reduce must be one of: mean, max.")
+        if args.linear_state_norm not in {"rank", "minmax", "none"}:
+            raise ValueError("--linear_state_norm must be one of: rank, minmax, none.")
+        if args.linear_state_score_type not in {
+            "write_norm",
+            "output_norm",
+            "state_similarity",
+        }:
+            raise ValueError(
+                "--linear_state_score_type must be one of: "
+                "write_norm, output_norm, state_similarity."
+            )
+        validate_linear_state_layer_range(args.linear_state_layer_range)
     if not args.attn_heatmap_mode:
         return
     if not is_qwen_attn_heatmap_model(args.model):
@@ -539,13 +545,13 @@ if __name__ == "__main__":
     parser.add_argument("--attn_heatmap_dir", type=str, default="output_dir/results_longbench/attn_heatmaps")
     parser.add_argument("--attn_max_prefill_tokens", type=int, default=None, help="Skip attention heatmap capture when the prefill token count exceeds this cap.")
     parser.add_argument("--gate_overlap_mode", "--gate_method_overlap_mode", action="store_true", help="Record gate topk overlap with the active compression method and save one layer/head heatmap per sample.")
-    parser.add_argument("--use_linear_state", action=argparse.BooleanOptionalAction, default=True, help="Enable GatedDeltaNet linear-state score enhancement in compression method config.")
+    parser.add_argument("--use_linear_state", action="store_true", help="Enable GatedDeltaNet linear-state score enhancement in compression method config.")
     parser.add_argument("--linear_state_weight", type=float, default=0.3, help="Weight of linear-state score when fusing with gate score.")
     parser.add_argument("--linear_state_required", action="store_true", help="Raise an error if linear-state scores are unavailable.")
     parser.add_argument("--linear_state_layer_range", type=str, default="all", help="Preceding linear-attention layers to aggregate: all, N for only the Nth nearest layer, :N for nearest N layers, or 1-indexed start:end from nearest to farthest.")
-    parser.add_argument("--linear_state_layer_reduce", type=str, default="mean", choices=["mean", "max"], help="How to reduce scores from preceding linear-attention layers.")
-    parser.add_argument("--linear_state_norm", type=str, default="rank", choices=["rank", "minmax", "none"], help="Normalization used before gate/linear-state score fusion.")
-    parser.add_argument("--linear_state_score_type", type=str, default="write_norm", choices=["write_norm", "output_norm", "state_similarity"], help="Token importance definition for linear-state enhancement.")
+    parser.add_argument("--linear_state_layer_reduce", type=str, default="mean", help="How to reduce scores from preceding linear-attention layers.")
+    parser.add_argument("--linear_state_norm", type=str, default="rank", help="Normalization used before gate/linear-state score fusion.")
+    parser.add_argument("--linear_state_score_type", type=str, default="write_norm", help="Token importance definition for linear-state enhancement.")
     parser.add_argument("--gate_overlap_dir", type=str, default="output_dir/results_longbench/gate_overlaps")
     parser.add_argument("--gate_overlap_interpolation", type=str, default="bicubic", help="Matplotlib interpolation mode for the gate/method overlap heatmap.")
     args = parser.parse_args()

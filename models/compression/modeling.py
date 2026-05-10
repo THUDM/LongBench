@@ -137,6 +137,8 @@ def _parse_linear_state_layer_range(layer_range):
 
 
 def _get_current_linear_state_scores(self, past_key_values, seq_len):
+    if not self.config.method_config.get("use_linear_state", False):
+        return None
     if past_key_values is None:
         return None
 
@@ -421,14 +423,15 @@ def Qwen3_5Attention_forward(
                     dim=1,
                 )
 
-        requires_linear_state_scores = getattr(
+        use_linear_state = self.config.method_config.get("use_linear_state", False)
+        requires_linear_state_scores = use_linear_state and getattr(
             self.kv_cluster,
             "requires_linear_state_scores",
             False,
         )
         overlap_uses_linear_state = (
             getattr(self.kv_cluster, "record_gate_overlap", False)
-            and self.config.method_config.get("use_linear_state", True)
+            and use_linear_state
         )
         needs_linear_state_cache = (
             requires_linear_state_scores
@@ -679,21 +682,24 @@ def Qwen3_5GatedDeltaNet_forward(
         query = query.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
         key = key.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
 
-    linear_state_score_type = getattr(
-        self,
-        "compression_method_config",
-        {},
-    ).get("linear_state_score_type", "write_norm")
-    if linear_state_score_type not in {
-        "write_norm",
-        "output_norm",
-        "state_similarity",
-    }:
-        raise ValueError(
-            f"Unsupported linear_state_score_type: {linear_state_score_type}"
+    method_config = getattr(self, "compression_method_config", {})
+    use_linear_state = method_config.get("use_linear_state", False)
+    linear_state_score_type = None
+    if use_linear_state:
+        linear_state_score_type = method_config.get(
+            "linear_state_score_type",
+            "write_norm",
         )
+        if linear_state_score_type not in {
+            "write_norm",
+            "output_norm",
+            "state_similarity",
+        }:
+            raise ValueError(
+                f"Unsupported linear_state_score_type: {linear_state_score_type}"
+            )
 
-    if cache_params is not None:
+    if cache_params is not None and use_linear_state:
         if linear_state_score_type in {"write_norm", "state_similarity"}:
             initial_score_state = recurrent_state if use_precomputed_states else None
             linear_state_score = _compute_linear_state_write_scores(
@@ -739,7 +745,11 @@ def Qwen3_5GatedDeltaNet_forward(
                 use_qk_l2norm_in_kernel=True,
             )
 
-    if cache_params is not None and linear_state_score_type == "output_norm":
+    if (
+        cache_params is not None
+        and use_linear_state
+        and linear_state_score_type == "output_norm"
+    ):
         linear_state_score = core_attn_out.float().norm(p=2, dim=-1)
         if attention_mask is not None and attention_mask.ndim == 2:
             linear_state_score = linear_state_score * attention_mask[:, -seq_len:, None].to(

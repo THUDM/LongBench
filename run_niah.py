@@ -30,17 +30,41 @@ scorer = rouge_scorer.RougeScorer(['rouge1', 'rougeL'], use_stemmer=True)
 LOCAL_MODEL_PROVIDERS = ["LLaMA3", "Mistral", "Qwen", "Qwen3.5", "HF"]
 
 
-def build_compression_config(compression_mode, compression_budget):
+def build_compression_config(
+    compression_mode,
+    compression_budget,
+    use_linear_state=False,
+    linear_state_weight=0.3,
+    linear_state_required=False,
+    linear_state_layer_range="all",
+    linear_state_layer_reduce="mean",
+    linear_state_norm="rank",
+    linear_state_score_type="write_norm",
+):
+    method_config = {
+        "budget": compression_budget,
+        "window_size": 8,
+        "mix_lambda": 0.07,
+        "retain_ratio": 0.2,
+        "retain_direction": "last",
+        "first_tokens": 4,
+        "use_linear_state": use_linear_state,
+    }
+    if use_linear_state:
+        method_config.update(
+            {
+                "linear_state_weight": linear_state_weight,
+                "linear_state_required": linear_state_required,
+                "linear_state_layer_range": linear_state_layer_range,
+                "linear_state_layer_reduce": linear_state_layer_reduce,
+                "linear_state_norm": linear_state_norm,
+                "linear_state_score_type": linear_state_score_type,
+            }
+        )
+
     return {
         "method": compression_mode,
-        "method_config": {
-            "budget": compression_budget,
-            "window_size": 8,
-            "mix_lambda": 0.07,
-            "retain_ratio": 0.2,
-            "retain_direction": "last",
-            "first_tokens": 4,
-        },
+        "method_config": method_config,
         "compression": None,
         "update_kv": True,
     }
@@ -69,6 +93,13 @@ def load_model_and_tokenizer(
     compression=False,
     compression_mode=None,
     compression_budget=4096,
+    use_linear_state=False,
+    linear_state_weight=0.3,
+    linear_state_required=False,
+    linear_state_layer_range="all",
+    linear_state_layer_reduce="mean",
+    linear_state_norm="rank",
+    linear_state_score_type="write_norm",
 ):
     tokenizer = AutoTokenizer.from_pretrained(
         model_path,
@@ -99,7 +130,19 @@ def load_model_and_tokenizer(
                 f"Compression currently supports only qwen3.5 models, got: {model_path}"
             )
 
-        replace_qwen3_5(build_compression_config(compression_mode, compression_budget))
+        replace_qwen3_5(
+            build_compression_config(
+                compression_mode,
+                compression_budget,
+                use_linear_state=use_linear_state,
+                linear_state_weight=linear_state_weight,
+                linear_state_required=linear_state_required,
+                linear_state_layer_range=linear_state_layer_range,
+                linear_state_layer_reduce=linear_state_layer_reduce,
+                linear_state_norm=linear_state_norm,
+                linear_state_score_type=linear_state_score_type,
+            )
+        )
         model = AutoModelForCausalLM.from_pretrained(model_path, **model_kwargs)
         apply_qwen3_5_compression_setup(model, tokenizer, compression_mode)
     elif "qwen3.5" in model_path_lower:
@@ -168,6 +211,46 @@ def validate_args(args):
         raise ValueError("--compression requires --compression_mode.")
     if args.compression and args.compression_budget < 1:
         raise ValueError("--compression_budget must be at least 1 when compression is enabled.")
+    if args.use_linear_state:
+        if not 0.0 <= args.linear_state_weight <= 1.0:
+            raise ValueError("--linear_state_weight must be in [0, 1].")
+        if args.linear_state_layer_reduce not in {"mean", "max"}:
+            raise ValueError("--linear_state_layer_reduce must be one of: mean, max.")
+        if args.linear_state_norm not in {"rank", "minmax", "none"}:
+            raise ValueError("--linear_state_norm must be one of: rank, minmax, none.")
+        if args.linear_state_score_type not in {
+            "write_norm",
+            "output_norm",
+            "state_similarity",
+        }:
+            raise ValueError(
+                "--linear_state_score_type must be one of: "
+                "write_norm, output_norm, state_similarity."
+            )
+        validate_linear_state_layer_range(args.linear_state_layer_range)
+
+
+def validate_linear_state_layer_range(layer_range):
+    if layer_range == "all":
+        return
+    try:
+        if ":" not in layer_range:
+            if int(layer_range) < 1:
+                raise ValueError
+            return
+
+        if layer_range.count(":") != 1:
+            raise ValueError
+        start_text, end_text = layer_range.split(":", 1)
+        start = int(start_text) if start_text else 1
+        end = int(end_text) if end_text else None
+        if start < 1 or (end is not None and end < start):
+            raise ValueError
+    except ValueError as exc:
+        raise ValueError(
+            "--linear_state_layer_range must be 'all', 'N', ':N', or 'start:end' "
+            "with 1 <= start <= end."
+        ) from exc
 
 class LLMNeedleHaystackTester:
     """
@@ -204,6 +287,13 @@ class LLMNeedleHaystackTester:
                  compression=False,
                  compression_mode=None,
                  compression_budget=4096,
+                 use_linear_state=False,
+                 linear_state_weight=0.3,
+                 linear_state_required=False,
+                 linear_state_layer_range="all",
+                 linear_state_layer_reduce="mean",
+                 linear_state_norm="rank",
+                 linear_state_score_type="write_norm",
                  enable_thinking=False):
         """
         :param needle: The needle to be found in the haystack. Default is None.
@@ -250,6 +340,13 @@ class LLMNeedleHaystackTester:
         self.compression = compression
         self.compression_mode = compression_mode
         self.compression_budget = compression_budget
+        self.use_linear_state = use_linear_state
+        self.linear_state_weight = linear_state_weight
+        self.linear_state_required = linear_state_required
+        self.linear_state_layer_range = linear_state_layer_range
+        self.linear_state_layer_reduce = linear_state_layer_reduce
+        self.linear_state_norm = linear_state_norm
+        self.linear_state_score_type = linear_state_score_type
         self.enable_thinking = enable_thinking
 
 
@@ -294,6 +391,13 @@ class LLMNeedleHaystackTester:
             compression=self.compression,
             compression_mode=self.compression_mode,
             compression_budget=self.compression_budget,
+            use_linear_state=self.use_linear_state,
+            linear_state_weight=self.linear_state_weight,
+            linear_state_required=self.linear_state_required,
+            linear_state_layer_range=self.linear_state_layer_range,
+            linear_state_layer_reduce=self.linear_state_layer_reduce,
+            linear_state_norm=self.linear_state_norm,
+            linear_state_score_type=self.linear_state_score_type,
         )
 
 
@@ -607,6 +711,18 @@ if __name__ == "__main__":
     parser.add_argument("--compression", action="store_true")
     parser.add_argument("--compression_mode", type=str, default=None)
     parser.add_argument("--compression_budget", type=int, default=4096)
+    parser.add_argument("--use_linear_state", action="store_true", help="Enable GatedDeltaNet linear-state score enhancement in compression method config.")
+    parser.add_argument("--linear_state_weight", type=float, default=0.3, help="Weight of linear-state score when fusing with gate score.")
+    parser.add_argument("--linear_state_required", action="store_true", help="Raise an error if linear-state scores are unavailable.")
+    parser.add_argument("--linear_state_layer_range", type=str, default="all", help="Preceding linear-attention layers to aggregate: all, N for only the Nth nearest layer, :N for nearest N layers, or 1-indexed start:end from nearest to farthest.")
+    parser.add_argument("--linear_state_layer_reduce", type=str, default="mean", help="How to reduce scores from preceding linear-attention layers.")
+    parser.add_argument("--linear_state_norm", type=str, default="rank", help="Normalization used before gate/linear-state score fusion.")
+    parser.add_argument(
+        "--linear_state_score_type",
+        type=str,
+        default="write_norm",
+        help="Token importance definition for linear-state enhancement.",
+    )
     parser.add_argument("--enable_thinking", action="store_true", help="Pass enable_thinking=True to chat templates that support it.")
     args = parser.parse_args()
 
@@ -627,6 +743,13 @@ if __name__ == "__main__":
                                  compression=args.compression,
                                  compression_mode=args.compression_mode,
                                  compression_budget=args.compression_budget,
+                                 use_linear_state=args.use_linear_state,
+                                 linear_state_weight=args.linear_state_weight,
+                                 linear_state_required=args.linear_state_required,
+                                 linear_state_layer_range=args.linear_state_layer_range,
+                                 linear_state_layer_reduce=args.linear_state_layer_reduce,
+                                 linear_state_norm=args.linear_state_norm,
+                                 linear_state_score_type=args.linear_state_score_type,
                                  enable_thinking=args.enable_thinking
                                  )
 
