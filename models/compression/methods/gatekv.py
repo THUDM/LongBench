@@ -7,6 +7,7 @@ class GateKV:
         self,
         budget=128,
         window_size=8,
+        first_tokens=4,
         use_linear_state=True,
         linear_state_weight=0.3,
         linear_state_required=False,
@@ -19,11 +20,14 @@ class GateKV:
         mode=None,
         **kwargs,
     ):
-        assert budget > 0, "budget must be greater than 0"
+        assert budget - first_tokens - window_size > 0, (
+            "budget must be greater than first_tokens + window_size"
+        )
         if not 0.0 <= linear_state_weight <= 1.0:
             raise ValueError("linear_state_weight must be in [0, 1].")
         self.budget = budget
         self.window_size = window_size
+        self.first_tokens = first_tokens
         self.use_linear_state = use_linear_state
         self.linear_state_weight = linear_state_weight
         self.linear_state_required = linear_state_required
@@ -150,12 +154,17 @@ class GateKV:
         if kv_cache_len <= self.budget:
             return key_states, value_states
 
+        middle_start = self.first_tokens
+        middle_end = kv_cache_len - self.window_size
+        middle_budget = self.budget - self.first_tokens - self.window_size
+
         gate_scores = self._gate_scores(
             gate_states,
             batch_size,
             num_kv_heads,
             kv_cache_len,
         )
+        gate_scores = gate_scores[:, :, middle_start:middle_end]
 
         state_scores = None
         if self.use_linear_state and self.linear_state_weight > 0:
@@ -165,6 +174,8 @@ class GateKV:
                 num_kv_heads,
                 kv_cache_len,
             )
+            if state_scores is not None:
+                state_scores = state_scores[:, :, middle_start:middle_end]
 
         if state_scores is not None:
             gate_weight = 1.0 - self.linear_state_weight
@@ -173,17 +184,31 @@ class GateKV:
                 + self.linear_state_weight * self._normalize_scores(state_scores)
             ).to(gate_scores.dtype)
 
-        # shape: (bsz, num_kv_heads, budget)
-        indices = gate_scores.topk(self.budget, dim=-1).indices
-        self.last_kept_indices = indices.detach()
+        # shape: (bsz, num_kv_heads, budget - first_tokens - window_size)
+        indices = gate_scores.topk(middle_budget, dim=-1).indices
+        middle_indices = indices + middle_start
+
+        first_indices = torch.arange(
+            self.first_tokens,
+            device=key_states.device,
+        ).view(1, 1, -1).expand(batch_size, num_kv_heads, -1)
+        recent_window_indices = torch.arange(
+            kv_cache_len - self.window_size,
+            kv_cache_len,
+            device=key_states.device,
+        ).view(1, 1, -1).expand(batch_size, num_kv_heads, -1)
+        kept_indices = torch.cat(
+            [first_indices, middle_indices, recent_window_indices],
+            dim=-1,
+        )
+        self.last_kept_indices = kept_indices.detach()
 
         #####################################################
         ###### Store evicted token indices start ############
         #####################################################
         # shape: (num_kv_heads, budget)
         if self.record_kept_token_indices:
-            indices_cl = indices.clone().squeeze(0).to("cpu")
-            cur_indices = indices_cl
+            cur_indices = kept_indices.clone().squeeze(0).to("cpu")
 
             if self.evicted_token_num > 0:
                 prev_indices = self.kept_token_indices[-1]
@@ -205,6 +230,19 @@ class GateKV:
         ######################################################
 
         indices = indices.unsqueeze(-1).expand(-1, -1, -1, head_dim)
-        key_states = key_states.gather(dim=2, index=indices)
-        value_states = value_states.gather(dim=2, index=indices)
+        k_first = key_states[:, :, : self.first_tokens, :]
+        v_first = value_states[:, :, : self.first_tokens, :]
+        k_middle = key_states[:, :, middle_start:middle_end, :].gather(
+            dim=2,
+            index=indices,
+        )
+        v_middle = value_states[:, :, middle_start:middle_end, :].gather(
+            dim=2,
+            index=indices,
+        )
+        k_cur = key_states[:, :, -self.window_size :, :]
+        v_cur = value_states[:, :, -self.window_size :, :]
+        key_states = torch.cat([k_first, k_middle, k_cur], dim=2)
+        value_states = torch.cat([v_first, v_middle, v_cur], dim=2)
+
         return key_states, value_states
