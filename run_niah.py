@@ -427,25 +427,25 @@ class LLMNeedleHaystackTester:
             results['file_name'] : context_file_location
 
             # Save the context to file for retesting
-            if not os.path.exists('results_needle/contexts'):
-                os.makedirs('results_needle/contexts')
+            if not os.path.exists('output_dir/results_needle/contexts'):
+                os.makedirs('output_dir/results_needle/contexts')
 
-            if not os.path.exists(f'results_needle/contexts/{self.model_version}'):
-                os.makedirs(f'results_needle/contexts/{self.model_version}')
+            if not os.path.exists(f'output_dir/results_needle/contexts/{self.model_version}'):
+                os.makedirs(f'output_dir/results_needle/contexts/{self.model_version}')
 
-            with open(f'results_needle/contexts/{self.model_version}/{context_file_location}_context.txt', 'w') as f:
+            with open(f'output_dir/results_needle/contexts/{self.model_version}/{context_file_location}_context.txt', 'w') as f:
                 f.write(context)
 
         if self.save_results:
             # Save the context to file for retesting
-            if not os.path.exists('results_needle/results'):
-                os.makedirs('results_needle/results')
+            if not os.path.exists('output_dir/results_needle/results/'):
+                os.makedirs('output_dir/results_needle/results/')
 
-            if not os.path.exists(f'results_needle/results/{self.model_version}'):
-                os.makedirs(f'results_needle/results/{self.model_version}')
+            if not os.path.exists(f'output_dir/results_needle/results/{self.model_version}'):
+                os.makedirs(f'output_dir/results_needle/results/{self.model_version}')
 
             # Save the result to file for retesting
-            p = f'results_needle/results/{self.model_version}/{context_file_location}_results.json'
+            p = f'output_dir/results_needle/results/{self.model_version}/{context_file_location}_results.json'
             print("Writing at %s" % p)
             with open(p, 'w') as f:
                 json.dump(results, f, ensure_ascii=False)
