@@ -11,6 +11,9 @@ def init_gate_overlap_recorder(method, method_name, record_gate_overlap=False):
     method.method_topk_indices = []
     method.gate_topk_indices = []
     method.gate_method_overlap = []
+    method.method_pre_topk_scores = []
+    method.gate_pre_topk_scores = []
+    method.pre_topk_score_positions = []
 
     # Backward-compatible aliases for the original SnapKV-only names.
     method.snapkv_topk_indices = method.method_topk_indices
@@ -143,6 +146,7 @@ def record_gate_topk_overlap(
     kv_cache_len,
     is_prefill,
     candidate_indices=None,
+    method_scores=None,
     linear_state_scores=None,
 ):
     if not getattr(method, "record_gate_overlap", False) or not is_prefill:
@@ -192,6 +196,14 @@ def record_gate_topk_overlap(
 
     method_abs_indices = torch.gather(candidate_indices, dim=-1, index=method_indices)
 
+    if method_scores is not None:
+        method_scores = method_scores.to(device)
+        if method_scores.shape != candidate_indices.shape:
+            raise ValueError(
+                f"method_scores shape {tuple(method_scores.shape)} must match "
+                f"candidate_indices shape {tuple(candidate_indices.shape)}."
+            )
+
     gate_scores = _align_gate_scores(
         gate_states,
         batch_size,
@@ -206,11 +218,12 @@ def record_gate_topk_overlap(
     )
     gate_scores = gate_scores.to(device)
     gate_scores = torch.gather(gate_scores, dim=-1, index=candidate_indices)
-    gate_scores = F.softmax(gate_scores, dim=-1, dtype=torch.float32).to(
+    gate_scores_for_plot = gate_scores
+    gate_topk_scores = F.softmax(gate_scores, dim=-1, dtype=torch.float32).to(
         gate_scores.dtype
     )
 
-    gate_local_indices = gate_scores.topk(k, dim=-1).indices
+    gate_local_indices = gate_topk_scores.topk(k, dim=-1).indices
     gate_abs_indices = torch.gather(candidate_indices, dim=-1, index=gate_local_indices)
     overlap = (
         (method_abs_indices.unsqueeze(-1) == gate_abs_indices.unsqueeze(-2))
@@ -223,3 +236,7 @@ def record_gate_topk_overlap(
     method.method_topk_indices.append(method_abs_indices.detach().cpu())
     method.gate_topk_indices.append(gate_abs_indices.detach().cpu())
     method.gate_method_overlap.append(overlap.detach().cpu())
+    if method_scores is not None:
+        method.method_pre_topk_scores.append(method_scores.detach().cpu())
+        method.gate_pre_topk_scores.append(gate_scores_for_plot.detach().cpu())
+        method.pre_topk_score_positions.append(candidate_indices.detach().cpu())

@@ -81,6 +81,7 @@ class SnapKV:
                 gate_states=gate_states,
                 kv_cache_len=kv_cache_len,
                 is_prefill=is_prefill,
+                method_scores=attn_cache,
                 linear_state_scores=linear_state_scores,
                 candidate_indices=torch.arange(
                     kv_cache_len - self.window_size,

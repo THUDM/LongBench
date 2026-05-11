@@ -542,6 +542,114 @@ def collect_gate_method_overlap(model):
     return overlap_matrix, layer_indices
 
 
+def _mean_scores_by_position(positions, scores):
+    import numpy as np
+
+    positions = np.asarray(positions)
+    scores = np.asarray(scores, dtype=np.float64)
+    if positions.shape != scores.shape:
+        raise ValueError(
+            f"positions shape {positions.shape} must match scores shape {scores.shape}."
+        )
+
+    reference_positions = positions[0, 0]
+    if np.all(positions == reference_positions):
+        token_positions = reference_positions.astype(np.int64)
+        mean_scores = scores.mean(axis=(0, 1))
+    else:
+        flat_positions = positions.reshape(-1).astype(np.int64)
+        flat_scores = scores.reshape(-1)
+        token_positions, inverse = np.unique(flat_positions, return_inverse=True)
+        sums = np.zeros(token_positions.shape[0], dtype=np.float64)
+        counts = np.zeros(token_positions.shape[0], dtype=np.float64)
+        np.add.at(sums, inverse, flat_scores)
+        np.add.at(counts, inverse, 1.0)
+        mean_scores = sums / np.maximum(counts, 1.0)
+
+    keep = np.isfinite(mean_scores)
+    return token_positions[keep], mean_scores[keep]
+
+
+def collect_gate_method_score_curves(model):
+    """
+    Collect per-layer topk-input score curves recorded by compression methods.
+
+    Returns:
+        curves: list of dicts with layer_idx, token_positions, method_scores,
+            and gate_scores. Scores are averaged over batch/head dimensions.
+    """
+    import numpy as np
+
+    model_body = getattr(model, "model", model)
+    layers = getattr(model_body, "layers", None)
+    if layers is None and hasattr(model_body, "language_model"):
+        layers = getattr(model_body.language_model, "layers", None)
+    if layers is None:
+        raise ValueError("Could not find decoder layers on the provided model.")
+
+    curves = []
+    for fallback_layer_idx, layer in enumerate(layers):
+        self_attn = getattr(layer, "self_attn", None)
+        kv_cluster = getattr(self_attn, "kv_cluster", None)
+        method_score_records = getattr(kv_cluster, "method_pre_topk_scores", None)
+        gate_score_records = getattr(kv_cluster, "gate_pre_topk_scores", None)
+        position_records = getattr(kv_cluster, "pre_topk_score_positions", None)
+        if not method_score_records or not gate_score_records or not position_records:
+            continue
+
+        positions = position_records[-1].numpy()
+        method_scores = method_score_records[-1].float().numpy()
+        gate_scores = gate_score_records[-1].float().numpy()
+        method_positions, method_curve = _mean_scores_by_position(
+            positions,
+            method_scores,
+        )
+        gate_positions, gate_curve = _mean_scores_by_position(
+            positions,
+            gate_scores,
+        )
+        if method_curve.size == 0 or gate_curve.size == 0:
+            continue
+
+        if not np.array_equal(method_positions, gate_positions):
+            raise ValueError("Method and gate score positions do not match.")
+        layer_idx = int(getattr(kv_cluster, "layer_idx", fallback_layer_idx))
+        curves.append(
+            {
+                "layer_idx": layer_idx,
+                "token_positions": method_positions,
+                "method_scores": method_curve,
+                "gate_scores": gate_curve,
+            }
+        )
+
+    if not curves:
+        raise ValueError(
+            "No gate/method pre-topk score records found. Enable gate overlap "
+            "recording and use a compression method that reports method scores."
+        )
+
+    curves.sort(key=lambda item: item["layer_idx"])
+    return curves
+
+
+def _smooth_score_curve(scores):
+    import numpy as np
+
+    scores = np.asarray(scores, dtype=np.float64)
+    if scores.size < 5:
+        return scores
+    window_size = max(5, min(301, int(scores.size * 0.01)))
+    if window_size % 2 == 0:
+        window_size += 1
+    x = np.arange(window_size) - window_size // 2
+    sigma = max(window_size / 6.0, 1.0)
+    kernel = np.exp(-(x ** 2) / (2 * sigma ** 2))
+    kernel /= kernel.sum()
+    padded_scores = np.pad(scores, window_size // 2, mode="edge")
+    return np.convolve(padded_scores, kernel, mode="valid")
+
+
 def plot_gate_method_overlap(model, output_path, interpolation="bicubic"):
     """
     Plot the overlap rate between gate topk and compression-method topk.
@@ -589,5 +697,61 @@ def plot_gate_method_overlap(model, output_path, interpolation="bicubic"):
     return {
         "output_path": output_path,
         "overlap_matrix": overlap_matrix,
+        "layer_indices": layer_indices,
+    }
+
+
+def plot_gate_method_score_distribution(model, output_path):
+    """
+    Plot smoothed pre-topk score curves over token positions.
+    """
+    import os
+
+    import matplotlib.pyplot as plt
+    from matplotlib.cm import ScalarMappable
+    from matplotlib.colors import Normalize
+
+    curves = collect_gate_method_score_curves(model)
+    output_dir = os.path.dirname(os.path.abspath(output_path))
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+
+    layer_indices = [curve["layer_idx"] for curve in curves]
+    norm = Normalize(vmin=min(layer_indices), vmax=max(layer_indices))
+    cmap = plt.get_cmap("viridis")
+    fig, axes = plt.subplots(1, 2, figsize=(13.0, 4.6), constrained_layout=True)
+    plot_specs = (
+        (axes[0], "method_scores", "Method Scores"),
+        (axes[1], "gate_scores", "Gate Scores"),
+    )
+    for ax, score_key, title in plot_specs:
+        for curve in curves:
+            token_positions = curve["token_positions"]
+            scores = _smooth_score_curve(curve[score_key])
+            ax.plot(
+                token_positions,
+                scores,
+                color=cmap(norm(curve["layer_idx"])),
+                alpha=0.78,
+                linewidth=1.1,
+            )
+        ax.set_title(title)
+        ax.set_xlabel("Token position")
+        ax.set_ylabel("Score")
+        ax.grid(alpha=0.25, linewidth=0.6)
+
+    colorbar = fig.colorbar(
+        ScalarMappable(norm=norm, cmap=cmap),
+        ax=axes,
+        shrink=0.92,
+        pad=0.02,
+    )
+    colorbar.set_label("Layer id")
+    fig.suptitle("Pre-TopK Scores by Token Position")
+    fig.savefig(output_path, dpi=200)
+    plt.close(fig)
+    return {
+        "output_path": output_path,
+        "num_layers": len(curves),
         "layer_indices": layer_indices,
     }

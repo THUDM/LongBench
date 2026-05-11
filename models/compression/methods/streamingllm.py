@@ -53,12 +53,21 @@ class StreamingLLM:
                 key_states.shape[1],
                 -1,
             )
+            method_scores = torch.zeros(
+                key_states.shape[0],
+                key_states.shape[1],
+                kv_cache_len,
+                dtype=key_states.dtype,
+                device=key_states.device,
+            )
+            method_scores.scatter_(dim=-1, index=indices, value=1.0)
             record_gate_topk_overlap(
                 self,
                 method_indices=indices,
                 gate_states=gate_states,
                 kv_cache_len=kv_cache_len,
                 is_prefill=is_prefill,
+                method_scores=method_scores,
                 linear_state_scores=linear_state_scores,
             )
             # only select the first self.first_tokens tokens and the last local_window_size tokens

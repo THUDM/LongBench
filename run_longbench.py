@@ -473,6 +473,16 @@ def get_pred(data, args, fout, out_file):
                 sample_index,
             )
             if gate_overlap_path is not None:
+                if isinstance(gate_overlap_path, dict):
+                    score_distribution_path = gate_overlap_path.get(
+                        "score_distribution_path"
+                    )
+                    gate_overlap_path = gate_overlap_path.get("overlap_path")
+                    if score_distribution_path is not None:
+                        item["gate_score_distribution_artifact"] = os.path.relpath(
+                            score_distribution_path,
+                            start=args.gate_overlap_dir,
+                        )
                 item["gate_overlap_artifact"] = os.path.relpath(
                     gate_overlap_path,
                     start=args.gate_overlap_dir,
@@ -544,7 +554,7 @@ if __name__ == "__main__":
     parser.add_argument("--attn_heatmap_mode", action="store_true")
     parser.add_argument("--attn_heatmap_dir", type=str, default="output_dir/results_longbench/attn_heatmaps")
     parser.add_argument("--attn_max_prefill_tokens", type=int, default=None, help="Skip attention heatmap capture when the prefill token count exceeds this cap.")
-    parser.add_argument("--gate_overlap_mode", "--gate_method_overlap_mode", action="store_true", help="Record gate topk overlap with the active compression method and save one layer/head heatmap per sample.")
+    parser.add_argument("--gate_overlap_mode", "--gate_method_overlap_mode", action="store_true", help="Record gate topk overlap with the active compression method and save per-sample overlap heatmaps plus pre-topk score distribution plots.")
     parser.add_argument("--use_linear_state", action="store_true", help="Enable GatedDeltaNet linear-state score enhancement in compression method config.")
     parser.add_argument("--linear_state_weight", type=float, default=0.3, help="Weight of linear-state score when fusing with gate score.")
     parser.add_argument("--linear_state_required", action="store_true", help="Raise an error if linear-state scores are unavailable.")
