@@ -1,5 +1,11 @@
 import torch
-import torch.nn.functional as F
+
+from .gate_scoring import (
+    align_gate_scores,
+    combine_gate_with_linear_state,
+    select_topk_indices,
+    validate_linear_state_scores,
+)
 
 
 def init_gate_overlap_recorder(method, method_name, record_gate_overlap=False):
@@ -46,46 +52,9 @@ def _expand_candidate_indices(candidate_indices, batch_size, num_kv_heads, devic
     return candidate_indices
 
 
-def _normalize_scores(scores, norm):
-    if norm == "rank":
-        if scores.shape[-1] == 1:
-            return torch.ones_like(scores, dtype=torch.float32)
-        ranks = scores.argsort(dim=-1).argsort(dim=-1).to(torch.float32)
-        return ranks / (scores.shape[-1] - 1)
-    if norm == "minmax":
-        scores = scores.to(torch.float32)
-        min_scores = scores.min(dim=-1, keepdim=True).values
-        max_scores = scores.max(dim=-1, keepdim=True).values
-        return (scores - min_scores) / (max_scores - min_scores).clamp_min(1e-6)
-    if norm == "none":
-        return scores.to(torch.float32)
-    raise ValueError(f"Unsupported linear_state_norm: {norm}")
-
-
 def _method_config(method):
     model_config = getattr(method, "model_config", None)
     return getattr(model_config, "method_config", {}) or {}
-
-
-def _align_gate_scores(gate_states, batch_size, num_kv_heads, kv_cache_len):
-    gate_scores = gate_states[:, :kv_cache_len, :, :].norm(p=1, dim=-1).transpose(1, 2)
-
-    num_attention_heads = gate_scores.shape[1]
-    if num_attention_heads != num_kv_heads:
-        if num_attention_heads % num_kv_heads != 0:
-            raise ValueError(
-                f"Cannot align {num_attention_heads} attention heads to "
-                f"{num_kv_heads} KV heads."
-            )
-        query_group_size = num_attention_heads // num_kv_heads
-        gate_scores = gate_scores.view(
-            batch_size,
-            num_kv_heads,
-            query_group_size,
-            kv_cache_len,
-        ).max(dim=2).values
-
-    return gate_scores
 
 
 def _enhance_gate_scores(method, gate_scores, linear_state_scores, kv_cache_len):
@@ -109,34 +78,20 @@ def _enhance_gate_scores(method, gate_scores, linear_state_scores, kv_cache_len)
 
     if not use_linear_state or linear_state_weight <= 0:
         return gate_scores
-    if linear_state_scores is None:
-        if linear_state_required:
-            raise ValueError("linear_state_scores are required for enhanced gate overlap.")
-        return gate_scores
-    if linear_state_scores.ndim != 3:
-        raise ValueError(
-            "linear_state_scores must have shape "
-            "(batch, num_key_value_heads, kv_cache_len)."
-        )
-    if linear_state_scores.shape[:2] != gate_scores.shape[:2]:
-        raise ValueError(
-            f"linear_state_scores shape {tuple(linear_state_scores.shape[:2])} "
-            f"does not match gate scores shape {tuple(gate_scores.shape[:2])}."
-        )
-    if linear_state_scores.shape[-1] < kv_cache_len:
-        if linear_state_required:
-            raise ValueError(
-                f"linear state sequence length {linear_state_scores.shape[-1]} "
-                f"is shorter than KV cache length {kv_cache_len}."
-            )
-        return gate_scores
-
-    linear_state_scores = linear_state_scores[:, :, :kv_cache_len].to(gate_scores.device)
-    gate_weight = 1.0 - linear_state_weight
-    return (
-        gate_weight * _normalize_scores(gate_scores, linear_state_norm)
-        + linear_state_weight * _normalize_scores(linear_state_scores, linear_state_norm)
-    ).to(gate_scores.dtype)
+    linear_state_scores = validate_linear_state_scores(
+        linear_state_scores,
+        gate_scores.shape[0],
+        gate_scores.shape[1],
+        kv_cache_len,
+        required=linear_state_required,
+        missing_message="linear_state_scores are required for enhanced gate overlap.",
+    )
+    return combine_gate_with_linear_state(
+        gate_scores,
+        linear_state_scores,
+        linear_state_weight,
+        linear_state_norm,
+    )
 
 
 def record_gate_topk_overlap(
@@ -204,7 +159,7 @@ def record_gate_topk_overlap(
                 f"candidate_indices shape {tuple(candidate_indices.shape)}."
             )
 
-    gate_scores = _align_gate_scores(
+    gate_scores = align_gate_scores(
         gate_states,
         batch_size,
         num_kv_heads,
@@ -219,11 +174,8 @@ def record_gate_topk_overlap(
     gate_scores = gate_scores.to(device)
     gate_scores = torch.gather(gate_scores, dim=-1, index=candidate_indices)
     gate_scores_for_plot = gate_scores
-    gate_topk_scores = F.softmax(gate_scores, dim=-1, dtype=torch.float32).to(
-        gate_scores.dtype
-    )
 
-    gate_local_indices = gate_topk_scores.topk(k, dim=-1).indices
+    gate_local_indices = select_topk_indices(gate_scores, k, dim=-1, softmax=True)
     gate_abs_indices = torch.gather(candidate_indices, dim=-1, index=gate_local_indices)
     overlap = (
         (method_abs_indices.unsqueeze(-1) == gate_abs_indices.unsqueeze(-2))

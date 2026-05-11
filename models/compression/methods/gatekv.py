@@ -1,5 +1,13 @@
 import torch
 
+from .gate_scoring import (
+    align_gate_scores,
+    combine_gate_with_linear_state,
+    select_topk_indices,
+    validate_linear_state_scores,
+)
+
+
 class GateKV:
     requires_gate_states = True
 
@@ -47,95 +55,6 @@ class GateKV:
             self.kept_token_indices = []
 
 
-    def _gate_scores(self, gate_states, batch_size, num_kv_heads, kv_cache_len):
-        if gate_states is None:
-            raise ValueError("GateKV requires gate_states from self_attn.gate.")
-        if gate_states.ndim != 4:
-            raise ValueError(
-                "gate_states must have shape "
-                "(batch, seq_len, num_attention_heads, head_dim)."
-            )
-        if gate_states.shape[0] != batch_size:
-            raise ValueError(
-                f"gate batch size {gate_states.shape[0]} does not match "
-                f"KV batch size {batch_size}."
-            )
-        if gate_states.shape[1] < kv_cache_len:
-            raise ValueError(
-                f"gate sequence length {gate_states.shape[1]} is shorter than "
-                f"KV cache length {kv_cache_len}."
-            )
-
-        gate_scores = gate_states[:, :kv_cache_len, :, :].norm(p=1, dim=-1)
-        gate_scores = gate_scores.transpose(1, 2)
-
-        num_attention_heads = gate_scores.shape[1]
-        if num_attention_heads != num_kv_heads:
-            if num_attention_heads % num_kv_heads != 0:
-                raise ValueError(
-                    f"Cannot align {num_attention_heads} attention heads to "
-                    f"{num_kv_heads} KV heads."
-                )
-            query_group_size = num_attention_heads // num_kv_heads
-            gate_scores = gate_scores.view(
-                batch_size,
-                num_kv_heads,
-                query_group_size,
-                kv_cache_len,
-            ).max(dim=2).values
-
-        return gate_scores
-
-    def _normalize_scores(self, scores):
-        if self.linear_state_norm == "rank":
-            if scores.shape[-1] == 1:
-                return torch.ones_like(scores, dtype=torch.float32)
-            ranks = scores.argsort(dim=-1).argsort(dim=-1).to(torch.float32)
-            return ranks / (scores.shape[-1] - 1)
-        if self.linear_state_norm == "minmax":
-            scores = scores.to(torch.float32)
-            min_scores = scores.min(dim=-1, keepdim=True).values
-            max_scores = scores.max(dim=-1, keepdim=True).values
-            return (scores - min_scores) / (max_scores - min_scores).clamp_min(1e-6)
-        if self.linear_state_norm == "none":
-            return scores.to(torch.float32)
-        raise ValueError(f"Unsupported linear_state_norm: {self.linear_state_norm}")
-
-    def _linear_state_scores(
-        self,
-        linear_state_scores,
-        batch_size,
-        num_kv_heads,
-        kv_cache_len,
-    ):
-        if linear_state_scores is None:
-            if self.linear_state_required:
-                raise ValueError("GateKV linear state enhancement requires linear_state_scores.")
-            return None
-        if linear_state_scores.ndim != 3:
-            raise ValueError(
-                "linear_state_scores must have shape "
-                "(batch, num_key_value_heads, kv_cache_len)."
-            )
-        if linear_state_scores.shape[0] != batch_size:
-            raise ValueError(
-                f"linear state batch size {linear_state_scores.shape[0]} does not "
-                f"match KV batch size {batch_size}."
-            )
-        if linear_state_scores.shape[1] != num_kv_heads:
-            raise ValueError(
-                f"linear state heads {linear_state_scores.shape[1]} do not match "
-                f"KV heads {num_kv_heads}."
-            )
-        if linear_state_scores.shape[2] < kv_cache_len:
-            if self.linear_state_required:
-                raise ValueError(
-                    f"linear state sequence length {linear_state_scores.shape[2]} "
-                    f"is shorter than KV cache length {kv_cache_len}."
-                )
-            return None
-        return linear_state_scores[:, :, :kv_cache_len]
-
     def update_kv(
         self,
         key_states,
@@ -158,34 +77,37 @@ class GateKV:
         middle_end = kv_cache_len - self.window_size
         middle_budget = self.budget - self.first_tokens - self.window_size
 
-        gate_scores = self._gate_scores(
+        gate_scores = align_gate_scores(
             gate_states,
             batch_size,
             num_kv_heads,
             kv_cache_len,
+            missing_message="GateKV requires gate_states from self_attn.gate.",
         )
         gate_scores = gate_scores[:, :, middle_start:middle_end]
 
         state_scores = None
         if self.use_linear_state and self.linear_state_weight > 0:
-            state_scores = self._linear_state_scores(
+            state_scores = validate_linear_state_scores(
                 linear_state_scores,
                 batch_size,
                 num_kv_heads,
                 kv_cache_len,
+                required=self.linear_state_required,
+                missing_message="GateKV linear state enhancement requires linear_state_scores.",
             )
             if state_scores is not None:
                 state_scores = state_scores[:, :, middle_start:middle_end]
 
-        if state_scores is not None:
-            gate_weight = 1.0 - self.linear_state_weight
-            gate_scores = (
-                gate_weight * self._normalize_scores(gate_scores)
-                + self.linear_state_weight * self._normalize_scores(state_scores)
-            ).to(gate_scores.dtype)
+        gate_scores = combine_gate_with_linear_state(
+            gate_scores,
+            state_scores,
+            self.linear_state_weight,
+            self.linear_state_norm,
+        )
 
         # shape: (bsz, num_kv_heads, budget - first_tokens - window_size)
-        indices = gate_scores.topk(middle_budget, dim=-1).indices
+        indices = select_topk_indices(gate_scores, middle_budget, dim=-1)
         middle_indices = indices + middle_start
 
         first_indices = torch.arange(
