@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 
 from .gate_scoring import (
     align_gate_scores,
@@ -105,6 +106,13 @@ class GateKV:
             self.linear_state_weight,
             self.linear_state_norm,
         )
+
+        gate_scores = F.max_pool1d(
+                gate_scores,
+                kernel_size=7,
+                padding=3,
+                stride=1,
+            )
 
         # shape: (bsz, num_kv_heads, budget - first_tokens - window_size)
         indices = select_topk_indices(gate_scores, middle_budget, dim=-1)

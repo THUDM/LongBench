@@ -654,7 +654,7 @@ def plot_gate_method_overlap(model, output_path, interpolation="bicubic"):
     """
     Plot the overlap rate between gate topk and compression-method topk.
 
-    The x axis is KV head id, the y axis is the true layer id, and color is
+    Each recorded layer is shown as its own heatmap row over KV heads. Color is
     overlap rate in [0, 1].
     """
     import os
@@ -666,30 +666,40 @@ def plot_gate_method_overlap(model, output_path, interpolation="bicubic"):
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
 
-    fig_width = max(6.0, overlap_matrix.shape[1] * 0.45)
-    fig_height = max(4.0, overlap_matrix.shape[0] * 0.28)
-    fig, ax = plt.subplots(figsize=(fig_width, fig_height), constrained_layout=True)
+    num_layers, num_heads = overlap_matrix.shape
+    fig_width = max(6.0, num_heads * 0.45)
+    fig_height = max(3.8, num_layers * 0.8)
+    fig, axes = plt.subplots(
+        num_layers,
+        1,
+        figsize=(fig_width, fig_height),
+        sharex=True,
+        squeeze=False,
+        constrained_layout=True,
+    )
 
     cmap = plt.get_cmap("viridis").copy()
     cmap.set_bad(color="#eeeeee")
-    image = ax.imshow(
-        overlap_matrix,
-        aspect="auto",
-        origin="lower",
-        interpolation=interpolation,
-        vmin=0.0,
-        vmax=1.0,
-        cmap=cmap,
-    )
+    image = None
+    for row_idx, layer_idx in enumerate(layer_indices):
+        ax = axes[row_idx, 0]
+        image = ax.imshow(
+            overlap_matrix[row_idx][None, :],
+            aspect="auto",
+            interpolation=interpolation,
+            vmin=0.0,
+            vmax=1.0,
+            cmap=cmap,
+        )
+        ax.set_ylabel(f"Layer {layer_idx}", rotation=0, ha="right", va="center")
+        ax.set_yticks([])
+        ax.grid(False)
 
-    ax.set_xlabel("Head id")
-    ax.set_ylabel("Layer id")
-    ax.set_title("Gate TopK / Method TopK Overlap")
-    ax.set_xticks(range(overlap_matrix.shape[1]))
-    ax.set_yticks(range(len(layer_indices)))
-    ax.set_yticklabels(layer_indices.tolist())
+    axes[0, 0].set_title("Gate TopK / Method TopK Overlap by Layer")
+    axes[-1, 0].set_xlabel("Head id")
+    axes[-1, 0].set_xticks(range(num_heads))
 
-    colorbar = fig.colorbar(image, ax=ax)
+    colorbar = fig.colorbar(image, ax=axes[:, 0], shrink=0.92, pad=0.02)
     colorbar.set_label("Overlap rate")
 
     fig.savefig(output_path, dpi=200)
@@ -704,12 +714,13 @@ def plot_gate_method_overlap(model, output_path, interpolation="bicubic"):
 def plot_gate_method_score_distribution(model, output_path):
     """
     Plot smoothed pre-topk score curves over token positions.
+
+    Each recorded layer is shown in its own row so score distributions from
+    different layers do not overlap in the same axes.
     """
     import os
 
     import matplotlib.pyplot as plt
-    from matplotlib.cm import ScalarMappable
-    from matplotlib.colors import Normalize
 
     curves = collect_gate_method_score_curves(model)
     output_dir = os.path.dirname(os.path.abspath(output_path))
@@ -717,41 +728,47 @@ def plot_gate_method_score_distribution(model, output_path):
         os.makedirs(output_dir, exist_ok=True)
 
     layer_indices = [curve["layer_idx"] for curve in curves]
-    norm = Normalize(vmin=min(layer_indices), vmax=max(layer_indices))
-    cmap = plt.get_cmap("viridis")
-    fig, axes = plt.subplots(1, 2, figsize=(13.0, 4.6), constrained_layout=True)
-    plot_specs = (
-        (axes[0], "method_scores", "Method Scores"),
-        (axes[1], "gate_scores", "Gate Scores"),
+    num_layers = len(curves)
+    fig_height = max(3.8, num_layers * 1.8)
+    fig, axes = plt.subplots(
+        num_layers,
+        2,
+        figsize=(13.0, fig_height),
+        sharex="col",
+        squeeze=False,
+        constrained_layout=True,
     )
-    for ax, score_key, title in plot_specs:
-        for curve in curves:
+    plot_specs = (
+        ("method_scores", "Method Scores", "#2f6fdf"),
+        ("gate_scores", "Gate Scores", "#c44e52"),
+    )
+    for row_idx, curve in enumerate(curves):
+        for col_idx, (score_key, title, color) in enumerate(plot_specs):
+            ax = axes[row_idx, col_idx]
             token_positions = curve["token_positions"]
             scores = _smooth_score_curve(curve[score_key])
             ax.plot(
                 token_positions,
                 scores,
-                color=cmap(norm(curve["layer_idx"])),
-                alpha=0.78,
-                linewidth=1.1,
+                color=color,
+                alpha=0.9,
+                linewidth=1.2,
             )
-        ax.set_title(title)
-        ax.set_xlabel("Token position")
-        ax.set_ylabel("Score")
-        ax.grid(alpha=0.25, linewidth=0.6)
+            if row_idx == 0:
+                ax.set_title(title)
+            if row_idx == num_layers - 1:
+                ax.set_xlabel("Token position")
+            if col_idx == 0:
+                ax.set_ylabel(f"Layer {curve['layer_idx']}\nScore")
+            else:
+                ax.set_ylabel("Score")
+            ax.grid(alpha=0.25, linewidth=0.6)
 
-    colorbar = fig.colorbar(
-        ScalarMappable(norm=norm, cmap=cmap),
-        ax=axes,
-        shrink=0.92,
-        pad=0.02,
-    )
-    colorbar.set_label("Layer id")
-    fig.suptitle("Pre-TopK Scores by Token Position")
+    fig.suptitle("Pre-TopK Scores by Token Position per Layer")
     fig.savefig(output_path, dpi=200)
     plt.close(fig)
     return {
         "output_path": output_path,
-        "num_layers": len(curves),
+        "num_layers": num_layers,
         "layer_indices": layer_indices,
     }
