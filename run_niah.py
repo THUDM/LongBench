@@ -8,9 +8,10 @@ import os
 import pdb
 import glob
 import jieba
+import re
 
 import json
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 from anthropic import Anthropic
 import numpy as np
 import argparse
@@ -24,10 +25,14 @@ from datetime import datetime, timezone
 import time
 import torch
 
-from models.compression.monkeypatch import replace_qwen3_5
-
 scorer = rouge_scorer.RougeScorer(['rouge1', 'rougeL'], use_stemmer=True)
-LOCAL_MODEL_PROVIDERS = ["LLaMA3", "Mistral", "Qwen", "Qwen3.5", "HF"]
+LOCAL_MODEL_PROVIDERS = ["LLaMA", "Llama", "LLaMA3", "Mistral", "Qwen", "Qwen3", "Qwen3MoE", "Qwen3.5", "HF"]
+SUPPORTED_COMPRESSION_MODEL_FAMILIES = {
+    "llama",
+    "qwen3",
+    "qwen3moe",
+    "qwen3.5",
+}
 
 
 def build_compression_config(
@@ -51,7 +56,35 @@ def build_compression_config(
     }
 
 
-def apply_qwen3_5_compression_setup(model, tokenizer, compression_mode):
+def get_model_family(model_path):
+    model_path_lower = model_path.lower()
+    if "qwen3.5" in model_path_lower or "qwen3_5" in model_path_lower:
+        return "qwen3.5"
+    if "qwen3moe" in model_path_lower or "qwen3-moe" in model_path_lower or "qwen3_moe" in model_path_lower:
+        return "qwen3moe"
+    if "qwen3" in model_path_lower and re.search(r"[-_]a\d+b", model_path_lower):
+        return "qwen3moe"
+    if "qwen3" in model_path_lower:
+        return "qwen3"
+    if "llama" in model_path_lower:
+        return "llama"
+
+    try:
+        config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+        model_type = getattr(config, "model_type", "").lower().replace("-", "_")
+        if model_type == "qwen3_moe":
+            return "qwen3moe"
+        if model_type == "qwen3":
+            return "qwen3"
+        if model_type == "llama":
+            return "llama"
+    except Exception:
+        pass
+
+    return None
+
+
+def apply_compression_setup(model, tokenizer, compression_mode):
     model.config.update(
         {
             "divide_method": "step_length",
@@ -65,6 +98,59 @@ def apply_qwen3_5_compression_setup(model, tokenizer, compression_mode):
         for text in ["\n", ".\n", ")\n", "\n\n", ".\n\n", ")\n\n"]
     ]
     model.after_think_token_ids = [tokenizer.encode("</think>", add_special_tokens=False)[-1]]
+
+
+def apply_compression_monkeypatch(model_family, compression_config):
+    from models.compression.monkeypatch import replace_llama, replace_qwen3, replace_qwen3_5, replace_qwen3moe
+
+    if model_family == "llama":
+        replace_llama(compression_config)
+    elif model_family == "qwen3":
+        replace_qwen3(compression_config)
+    elif model_family == "qwen3moe":
+        replace_qwen3moe(compression_config)
+    elif model_family == "qwen3.5":
+        replace_qwen3_5(compression_config)
+    else:
+        raise ValueError(
+            f"Compression supports {sorted(SUPPORTED_COMPRESSION_MODEL_FAMILIES)}, got: {model_family}"
+        )
+
+
+def load_local_model(model_family, model_path, model_kwargs):
+    if model_family == "llama":
+        from models.llama.configuration_llama import LlamaConfig
+        from models.llama.modeling_llama import LlamaForCausalLM
+
+        config = LlamaConfig.from_pretrained(model_path)
+        return LlamaForCausalLM.from_pretrained(model_path, config=config, **model_kwargs)
+
+    if model_family == "qwen3":
+        from models.qwen3.configuration_qwen3 import Qwen3Config
+        from models.qwen3.modeling_qwen3 import Qwen3ForCausalLM
+
+        config = Qwen3Config.from_pretrained(model_path)
+        return Qwen3ForCausalLM.from_pretrained(model_path, config=config, **model_kwargs)
+
+    if model_family == "qwen3moe":
+        from models.qwen3_moe.configuration_qwen3_moe import Qwen3MoeConfig
+        from models.qwen3_moe.modeling_qwen3_moe import Qwen3MoeForCausalLM
+
+        config = Qwen3MoeConfig.from_pretrained(model_path)
+        return Qwen3MoeForCausalLM.from_pretrained(model_path, config=config, **model_kwargs)
+
+    if model_family == "qwen3.5":
+        from models.qwen3_5.configuration_qwen3_5 import Qwen3_5Config
+        from models.qwen3_5.modeling_qwen3_5 import Qwen3_5ForConditionalGeneration
+
+        config = Qwen3_5Config.from_pretrained(model_path)
+        return Qwen3_5ForConditionalGeneration.from_pretrained(
+            model_path,
+            config=config,
+            **model_kwargs,
+        )
+
+    return AutoModelForCausalLM.from_pretrained(model_path, **model_kwargs)
 
 
 def load_model_and_tokenizer(
@@ -95,35 +181,29 @@ def load_model_and_tokenizer(
     else:
         model_kwargs["torch_dtype"] = torch.float32
 
-    model_path_lower = model_path.lower()
+    model_family = get_model_family(model_path)
     if compression:
         if not compression_mode:
             raise ValueError("Please provide --compression_mode when --compression is enabled.")
-        if "qwen3.5" not in model_path_lower:
+        if model_family not in SUPPORTED_COMPRESSION_MODEL_FAMILIES:
             raise ValueError(
-                f"Compression currently supports only qwen3.5 models, got: {model_path}"
+                "Compression currently supports llama, qwen3, qwen3moe, and qwen3.5 "
+                f"models, got: {model_path}"
             )
 
-        replace_qwen3_5(
-            build_compression_config(
-                compression_mode,
-                compression_budget,
-            )
+        compression_config = build_compression_config(
+            compression_mode,
+            compression_budget,
         )
+        apply_compression_monkeypatch(model_family, compression_config)
         model = AutoModelForCausalLM.from_pretrained(model_path, **model_kwargs)
-        apply_qwen3_5_compression_setup(model, tokenizer, compression_mode)
-    elif "qwen3.5" in model_path_lower:
-        from models.qwen3_5.configuration_qwen3_5 import Qwen3_5Config
-        from models.qwen3_5.modeling_qwen3_5 import Qwen3_5ForConditionalGeneration
-
-        config = Qwen3_5Config.from_pretrained(model_path)
-        model = Qwen3_5ForConditionalGeneration.from_pretrained(
-            model_path,
-            config=config,
-            **model_kwargs,
-        )
+        apply_compression_setup(model, tokenizer, compression_mode)
     else:
-        model = AutoModelForCausalLM.from_pretrained(model_path, **model_kwargs)
+        model = load_local_model(
+            model_family,
+            model_path,
+            model_kwargs,
+        )
 
     model.eval()
     return model, tokenizer
@@ -294,7 +374,7 @@ class LLMNeedleHaystackTester:
         self.model_name = model_name
 
         if self.model_provider not in LOCAL_MODEL_PROVIDERS:
-            raise ValueError("model_provider must be one of 'LLaMA3', 'Mistral', 'Qwen', 'Qwen3.5', or 'HF'")
+            raise ValueError(f"model_provider must be one of {LOCAL_MODEL_PROVIDERS}")
 
         print("loading from %s" % model_name)
         self.model_to_test, self.enc = load_model_and_tokenizer(
