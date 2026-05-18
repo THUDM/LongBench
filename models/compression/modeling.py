@@ -13,7 +13,6 @@ from transformers.models.qwen3_5.modeling_qwen3_5 import (
 from transformers.models.qwen3_5.modeling_qwen3_5 import (
     apply_mask_to_padding_states,
     apply_rotary_pos_emb,
-    l2norm,
 )
 from transformers.models.qwen3_5.modeling_qwen3_5 import (
     eager_attention_forward
@@ -30,7 +29,6 @@ from .methods import (
     SnapKV,
     StreamingLLM,
     H2O,
-    GateKV,
 )
 
 import math
@@ -40,16 +38,9 @@ KV_COMPRESSION_MAP = {
     "snapkv": SnapKV,
     "streamingllm": StreamingLLM,
     "h2o": H2O,
-    "gatekv": GateKV,
 }
 
 logger = logging.get_logger(__name__)
-
-
-def _cuda_device_context(tensor):
-    if tensor.is_cuda:
-        return torch.cuda.device(tensor.device)
-    return contextlib.nullcontext()
 
 
 def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
@@ -62,252 +53,6 @@ def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
         return hidden_states
     hidden_states = hidden_states[:, :, None, :, :].expand(batch, num_key_value_heads, n_rep, slen, head_dim)
     return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
-
-
-def _compress_gate_cache(gate_cache, kept_indices, num_key_value_groups):
-    gate_cache = gate_cache.transpose(1, 2)
-    if num_key_value_groups != 1:
-        kept_indices = kept_indices.repeat_interleave(num_key_value_groups, dim=1)
-    kept_indices = kept_indices.to(device=gate_cache.device, dtype=torch.long)
-    kept_indices = kept_indices.unsqueeze(-1).expand(
-        -1,
-        -1,
-        -1,
-        gate_cache.shape[-1],
-    )
-    return gate_cache.gather(dim=2, index=kept_indices).transpose(1, 2)
-
-
-def _compress_linear_state_cache(linear_state_cache, kept_indices):
-    kept_indices = kept_indices.to(device=linear_state_cache.device, dtype=torch.long)
-    return linear_state_cache.gather(dim=2, index=kept_indices)
-
-
-def _align_linear_state_heads(linear_state_scores, num_kv_heads):
-    batch_size, num_linear_heads, seq_len = linear_state_scores.shape
-    if num_linear_heads == num_kv_heads:
-        return linear_state_scores
-    if num_linear_heads % num_kv_heads == 0:
-        group_size = num_linear_heads // num_kv_heads
-        return linear_state_scores.view(
-            batch_size,
-            num_kv_heads,
-            group_size,
-            seq_len,
-        ).max(dim=2).values
-
-    return linear_state_scores.mean(dim=1, keepdim=True).expand(
-        batch_size,
-        num_kv_heads,
-        seq_len,
-    )
-
-
-def _parse_linear_state_layer_range(layer_range):
-    if layer_range is None or layer_range == "all":
-        return 1, None
-    if isinstance(layer_range, int):
-        if layer_range < 1:
-            raise ValueError("linear_state_layer_range must be positive.")
-        return 1, layer_range
-
-    layer_range = str(layer_range).strip()
-    if not layer_range:
-        raise ValueError("linear_state_layer_range cannot be empty.")
-    try:
-        if ":" not in layer_range:
-            layer_idx = int(layer_range)
-            if layer_idx < 1:
-                raise ValueError
-            return layer_idx, layer_idx
-
-        if layer_range.count(":") != 1:
-            raise ValueError("linear_state_layer_range must be positive.")
-        start_text, end_text = layer_range.split(":", 1)
-        start = int(start_text) if start_text else 1
-        end = int(end_text) if end_text else None
-        if start < 1 or (end is not None and end < start):
-            raise ValueError
-        return start, end
-    except ValueError as exc:
-        raise ValueError(
-            "linear_state_layer_range must be 'all', 'N', ':N', or 'start:end' "
-            "with 1 <= start <= end."
-        ) from exc
-
-
-def _get_current_linear_state_scores(self, past_key_values, seq_len):
-    if not self.config.method_config.get("use_linear_state", False):
-        return None
-    if past_key_values is None:
-        return None
-
-    layer_types = getattr(self.config, "layer_types", None)
-    if layer_types is None:
-        return None
-
-    layer_start, layer_end = _parse_linear_state_layer_range(
-        self.config.method_config.get("linear_state_layer_range", "all")
-    )
-    linear_state_scores = []
-    linear_state_scores_device = None
-    prev_layer_idx = self.layer_idx - 1
-    linear_layer_offset = 0
-    while prev_layer_idx >= 0 and layer_types[prev_layer_idx] == "linear_attention":
-        linear_layer_offset += 1
-        if layer_end is not None and linear_layer_offset > layer_end:
-            break
-        prev_cache = past_key_values.layers[prev_layer_idx]
-        if linear_layer_offset >= layer_start:
-            scores = getattr(prev_cache, "linear_state_scores", None)
-            if scores is not None and scores.shape[-1] >= seq_len:
-                scores = scores[:, :, -seq_len:]
-                if linear_state_scores_device is None:
-                    linear_state_scores_device = scores.device
-                else:
-                    scores = scores.to(linear_state_scores_device)
-                linear_state_scores.append(scores)
-        prev_layer_idx -= 1
-
-    if not linear_state_scores:
-        return None
-
-    layer_reduce = self.config.method_config.get("linear_state_layer_reduce", "mean")
-    stacked_scores = torch.stack(linear_state_scores, dim=0)
-    if layer_reduce == "mean":
-        scores = stacked_scores.mean(dim=0)
-    elif layer_reduce == "max":
-        scores = stacked_scores.max(dim=0).values
-    else:
-        raise ValueError(f"Unsupported linear_state_layer_reduce: {layer_reduce}")
-
-    return _align_linear_state_heads(scores, self.config.num_key_value_heads)
-
-
-def _init_linear_recurrent_state(key, value, initial_state=None):
-    batch_size, _, num_heads, k_head_dim = key.shape
-    v_head_dim = value.shape[-1]
-    if initial_state is None:
-        return torch.zeros(
-            batch_size,
-            num_heads,
-            k_head_dim,
-            v_head_dim,
-            device=value.device,
-            dtype=torch.float32,
-        )
-    return initial_state.to(device=value.device, dtype=torch.float32).clone()
-
-
-def _linear_state_future_decay(g):
-    return (
-        torch.flip(
-            torch.cumsum(torch.flip(g, dims=[1]), dim=1),
-            dims=[1],
-        )
-        - g
-    ).exp()
-
-
-@torch.no_grad()
-def _compute_linear_state_write_scores(
-    key,
-    value,
-    g,
-    beta,
-    initial_state=None,
-    score_type="write_norm",
-):
-    score_device = key.device
-    key = l2norm(key, dim=-1, eps=1e-6).to(
-        device=score_device,
-        dtype=torch.float32,
-    ).contiguous()
-    value = value.to(device=score_device, dtype=torch.float32).contiguous()
-    g = g.to(device=score_device, dtype=torch.float32).contiguous()
-    beta = beta.to(device=score_device, dtype=torch.float32).contiguous()
-    future_decay = _linear_state_future_decay(g)
-    if score_type not in {"write_norm", "state_similarity"}:
-        raise ValueError(f"Unsupported linear_state_score_type: {score_type}")
-
-    def score_from_delta(delta, final_state=None):
-        write_norm = delta.norm(p=2, dim=-1)
-        if final_state is None:
-            return write_norm
-
-        state_norm = torch.linalg.vector_norm(final_state, dim=(-2, -1))
-        dot = (
-            final_state[:, None]
-            * key.unsqueeze(-1)
-            * delta.unsqueeze(-2)
-        ).sum(dim=(-2, -1))
-        score = dot.abs() / (write_norm * state_norm[:, None, :]).clamp_min(1e-6)
-        return score * write_norm
-
-    def chunk_replay():
-        if not key.is_cuda:
-            return None
-
-        try:
-            from fla.ops.common.chunk_delta_h import chunk_gated_delta_rule_fwd_h
-            from fla.ops.gated_delta_rule.chunk_fwd import chunk_gated_delta_rule_fwd_intra
-            from fla.ops.utils import chunk_local_cumsum
-        except Exception:
-            return None
-
-        with _cuda_device_context(key):
-            g_cumsum = chunk_local_cumsum(g, chunk_size=64, scale=None)
-            w, u, _ = chunk_gated_delta_rule_fwd_intra(
-                k=key,
-                v=value,
-                g=g_cumsum,
-                beta=beta,
-                use_exp2=False,
-            )
-            _, delta, final_state = chunk_gated_delta_rule_fwd_h(
-                k=key,
-                w=w,
-                u=u,
-                g=g_cumsum,
-                initial_state=_init_linear_recurrent_state(key, value, initial_state),
-                output_final_state=score_type == "state_similarity",
-                chunk_size=64,
-                save_new_value=True,
-                use_exp2=False,
-            )
-
-        return delta, final_state
-
-    chunk_result = chunk_replay()
-    if chunk_result is not None:
-        delta, final_state = chunk_result
-        if score_type == "write_norm":
-            return score_from_delta(delta) * future_decay
-        return score_from_delta(delta, final_state=final_state) * future_decay
-
-    def replay_delta():
-        recurrent_state = _init_linear_recurrent_state(key, value, initial_state)
-        deltas = []
-        for token_idx in range(key.shape[1]):
-            k_t = key[:, token_idx]
-            v_t = value[:, token_idx]
-            g_t = g[:, token_idx].exp().unsqueeze(-1).unsqueeze(-1)
-            beta_t = beta[:, token_idx].unsqueeze(-1)
-
-            recurrent_state = recurrent_state * g_t
-            kv_mem = (recurrent_state * k_t.unsqueeze(-1)).sum(dim=-2)
-            delta = (v_t - kv_mem) * beta_t
-
-            deltas.append(delta)
-            recurrent_state = recurrent_state + k_t.unsqueeze(-1) * delta.unsqueeze(-2)
-        return torch.stack(deltas, dim=1), recurrent_state
-
-    delta, final_state = replay_delta()
-    if score_type == "write_norm":
-        return score_from_delta(delta) * future_decay
-    if score_type == "state_similarity":
-        return score_from_delta(delta, final_state=final_state) * future_decay
-
 
 def Qwen3_5Attention_init(
     self, config: Qwen3_5Config, layer_idx: int, compression_config: dict
@@ -413,68 +158,10 @@ def Qwen3_5Attention_forward(
                 ]
         # =============== Enable Query Cache end =========
 
-        requires_gate_states = getattr(self.kv_cluster, "requires_gate_states", False)
-        if requires_gate_states:
-            if not hasattr(layer_cache, "gate_cache") or layer_cache.gate_cache is None:
-                layer_cache.gate_cache = gate_states
-            else:
-                layer_cache.gate_cache = torch.cat(
-                    (layer_cache.gate_cache, gate_states),
-                    dim=1,
-                )
-
-        use_linear_state = self.config.method_config.get("use_linear_state", False)
-        requires_linear_state_scores = use_linear_state and getattr(
-            self.kv_cluster,
-            "requires_linear_state_scores",
-            False,
-        )
-        overlap_uses_linear_state = (
-            getattr(self.kv_cluster, "record_gate_overlap", False)
-            and use_linear_state
-        )
-        needs_linear_state_cache = (
-            requires_linear_state_scores
-            or overlap_uses_linear_state
-        )
-        if needs_linear_state_cache:
-            current_linear_state_scores = _get_current_linear_state_scores(
-                self,
-                past_key_values,
-                query_states.shape[-2],
-            )
-            if current_linear_state_scores is not None:
-                if (
-                    not hasattr(layer_cache, "linear_state_cache")
-                    or layer_cache.linear_state_cache is None
-                ):
-                    layer_cache.linear_state_cache = current_linear_state_scores
-                else:
-                    layer_cache.linear_state_cache = torch.cat(
-                        (layer_cache.linear_state_cache, current_linear_state_scores),
-                        dim=2,
-                    )
-
         # =============== decoding-time compression start ===============
         cached_queries = layer_cache.query_cache
         if self.config.compression is None or query_states.shape[-2] > 1:
             update_kwargs = {}
-            if requires_gate_states:
-                update_kwargs = {
-                    "gate_states": layer_cache.gate_cache,
-                    "is_prefill": query_states.shape[-2] > 1,
-                }
-            elif getattr(self.kv_cluster, "record_gate_overlap", False):
-                update_kwargs = {
-                    "gate_states": gate_states,
-                    "is_prefill": query_states.shape[-2] > 1,
-                }
-            if needs_linear_state_cache:
-                update_kwargs["linear_state_scores"] = getattr(
-                    layer_cache,
-                    "linear_state_cache",
-                    None,
-                )
             key_states_compress, value_states_compress = self.kv_cluster.update_kv(
                 key_states,
                 cached_queries,
@@ -488,23 +175,6 @@ def Qwen3_5Attention_forward(
                     value_states_compress,
                     self.layer_idx,
                 )
-                if requires_gate_states:
-                    kept_indices = getattr(self.kv_cluster, "last_kept_indices", None)
-                    if kept_indices is not None:
-                        layer_cache.gate_cache = _compress_gate_cache(
-                            layer_cache.gate_cache,
-                            kept_indices,
-                            self.num_key_value_groups,
-                        )
-                    if (
-                        needs_linear_state_cache
-                        and kept_indices is not None
-                        and getattr(layer_cache, "linear_state_cache", None) is not None
-                    ):
-                        layer_cache.linear_state_cache = _compress_linear_state_cache(
-                            layer_cache.linear_state_cache,
-                            kept_indices,
-                        )
             else:
                 past_key_values.update(
                     key_states,
@@ -520,22 +190,6 @@ def Qwen3_5Attention_forward(
             )
 
             update_kwargs = {}
-            if requires_gate_states:
-                update_kwargs = {
-                    "gate_states": layer_cache.gate_cache,
-                    "is_prefill": query_states.shape[-2] > 1,
-                }
-            elif getattr(self.kv_cluster, "record_gate_overlap", False):
-                update_kwargs = {
-                    "gate_states": gate_states,
-                    "is_prefill": query_states.shape[-2] > 1,
-                }
-            if needs_linear_state_cache:
-                update_kwargs["linear_state_scores"] = getattr(
-                    layer_cache,
-                    "linear_state_cache",
-                    None,
-                )
             key_states_compress, value_states_compress = self.kv_cluster.update_kv(
                 key_states,
                 cached_queries,
@@ -546,23 +200,6 @@ def Qwen3_5Attention_forward(
             if self.config.update_kv is True:
                 layer_cache.keys = key_states_compress
                 layer_cache.values = value_states_compress
-                if requires_gate_states:
-                    kept_indices = getattr(self.kv_cluster, "last_kept_indices", None)
-                    if kept_indices is not None:
-                        layer_cache.gate_cache = _compress_gate_cache(
-                            layer_cache.gate_cache,
-                            kept_indices,
-                            self.num_key_value_groups,
-                        )
-                    if (
-                        needs_linear_state_cache
-                        and kept_indices is not None
-                        and getattr(layer_cache, "linear_state_cache", None) is not None
-                    ):
-                        layer_cache.linear_state_cache = _compress_linear_state_cache(
-                            layer_cache.linear_state_cache,
-                            kept_indices,
-                        )
         else:
             key_states, value_states = past_key_values.update(
                 key_states,
@@ -579,281 +216,21 @@ def Qwen3_5Attention_forward(
     if attention_mask is not None and attention_mask.device != query_states.device:
         attention_mask = attention_mask.to(query_states.device)
 
-    with _cuda_device_context(query_states):
-        attn_output, attn_weights = attention_interface(
-            self,
-            query_states,
-            key_states,
-            value_states,
-            attention_mask,
-            dropout=0.0 if not self.training else self.attention_dropout,
-            scaling=self.scaling,
-            **kwargs,
-        )
+    attn_output, attn_weights = attention_interface(
+        self,
+        query_states,
+        key_states,
+        value_states,
+        attention_mask,
+        dropout=0.0 if not self.training else self.attention_dropout,
+        scaling=self.scaling,
+        **kwargs,
+    )
 
     attn_output = attn_output.reshape(*input_shape, -1).contiguous()
     attn_output = attn_output * torch.sigmoid(gate)
     attn_output = self.o_proj(attn_output)
     return attn_output, attn_weights
-
-
-def Qwen3_5GatedDeltaNet_forward(
-    self,
-    hidden_states: torch.Tensor,
-    cache_params: Cache | None = None,
-    attention_mask: torch.Tensor | None = None,
-):
-    hidden_states = apply_mask_to_padding_states(hidden_states, attention_mask)
-
-    batch_size, seq_len, _ = hidden_states.shape
-
-    use_precomputed_states = (
-        cache_params is not None
-        and cache_params.has_previous_state(self.layer_idx)
-        and seq_len == 1
-    )
-
-    if use_precomputed_states:
-        layer_cache = cache_params.layers[self.layer_idx]
-        conv_state = layer_cache.conv_states
-        recurrent_state = layer_cache.recurrent_states
-        if conv_state.device != hidden_states.device:
-            conv_state = conv_state.to(hidden_states.device)
-            layer_cache.conv_states = conv_state
-        if recurrent_state.device != hidden_states.device:
-            recurrent_state = recurrent_state.to(hidden_states.device)
-            layer_cache.recurrent_states = recurrent_state
-
-    mixed_qkv = self.in_proj_qkv(hidden_states)
-    mixed_qkv = mixed_qkv.transpose(1, 2)
-
-    z = self.in_proj_z(hidden_states)
-    z = z.reshape(batch_size, seq_len, -1, self.head_v_dim)
-
-    b = self.in_proj_b(hidden_states)
-    a = self.in_proj_a(hidden_states)
-
-    conv_weight = self.conv1d.weight.squeeze(1)
-    conv_bias = self.conv1d.bias
-
-    if use_precomputed_states:
-        with _cuda_device_context(mixed_qkv):
-            mixed_qkv = self.causal_conv1d_update(
-                mixed_qkv,
-                conv_state,
-                conv_weight,
-                conv_bias,
-                self.activation,
-            )
-    else:
-        if cache_params is not None:
-            conv_state = F.pad(mixed_qkv, (self.conv_kernel_size - mixed_qkv.shape[-1], 0))
-            conv_state = cache_params.update_conv_state(conv_state, self.layer_idx)
-        if self.causal_conv1d_fn is not None:
-            with _cuda_device_context(mixed_qkv):
-                mixed_qkv = self.causal_conv1d_fn(
-                    x=mixed_qkv,
-                    weight=conv_weight,
-                    bias=conv_bias,
-                    activation=self.activation,
-                    seq_idx=None,
-                )
-        else:
-            mixed_qkv = F.silu(self.conv1d(mixed_qkv)[:, :, :seq_len])
-
-    mixed_qkv = mixed_qkv.transpose(1, 2)
-    query, key, value = torch.split(
-        mixed_qkv,
-        [
-            self.key_dim,
-            self.key_dim,
-            self.value_dim,
-        ],
-        dim=-1,
-    )
-
-    query = query.reshape(batch_size, seq_len, -1, self.head_k_dim)
-    key = key.reshape(batch_size, seq_len, -1, self.head_k_dim)
-    value = value.reshape(batch_size, seq_len, -1, self.head_v_dim)
-
-    beta = b.sigmoid()
-    g = -self.A_log.float().exp() * F.softplus(a.float() + self.dt_bias)
-    if self.num_v_heads // self.num_k_heads > 1:
-        query = query.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
-        key = key.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
-
-    method_config = getattr(self, "compression_method_config", {})
-    use_linear_state = method_config.get("use_linear_state", False)
-    linear_state_score_type = None
-    if use_linear_state:
-        linear_state_score_type = method_config.get(
-            "linear_state_score_type",
-            "write_norm",
-        )
-        if linear_state_score_type not in {
-            "write_norm",
-            "output_norm",
-            "state_similarity",
-        }:
-            raise ValueError(
-                f"Unsupported linear_state_score_type: {linear_state_score_type}"
-            )
-
-    if cache_params is not None and use_linear_state:
-        if linear_state_score_type in {"write_norm", "state_similarity"}:
-            initial_score_state = recurrent_state if use_precomputed_states else None
-            linear_state_score = _compute_linear_state_write_scores(
-                key,
-                value,
-                g,
-                beta,
-                initial_state=initial_score_state,
-                score_type=linear_state_score_type,
-            )
-            if attention_mask is not None and attention_mask.ndim == 2:
-                linear_state_score = linear_state_score * attention_mask[:, -seq_len:, None].to(
-                    device=linear_state_score.device,
-                    dtype=linear_state_score.dtype,
-                )
-            cache_params.layers[self.layer_idx].linear_state_scores = (
-                linear_state_score.transpose(1, 2).detach()
-            )
-
-    if not use_precomputed_states:
-        with _cuda_device_context(query):
-            core_attn_out, last_recurrent_state = self.chunk_gated_delta_rule(
-                query,
-                key,
-                value,
-                g=g,
-                beta=beta,
-                initial_state=None,
-                output_final_state=cache_params is not None,
-                use_qk_l2norm_in_kernel=True,
-            )
-
-    else:
-        with _cuda_device_context(query):
-            core_attn_out, last_recurrent_state = self.recurrent_gated_delta_rule(
-                query,
-                key,
-                value,
-                g=g,
-                beta=beta,
-                initial_state=recurrent_state,
-                output_final_state=cache_params is not None,
-                use_qk_l2norm_in_kernel=True,
-            )
-
-    if (
-        cache_params is not None
-        and use_linear_state
-        and linear_state_score_type == "output_norm"
-    ):
-        linear_state_score = core_attn_out.float().norm(p=2, dim=-1)
-        if attention_mask is not None and attention_mask.ndim == 2:
-            linear_state_score = linear_state_score * attention_mask[:, -seq_len:, None].to(
-                device=linear_state_score.device,
-                dtype=linear_state_score.dtype,
-            )
-        cache_params.layers[self.layer_idx].linear_state_scores = (
-            linear_state_score.transpose(1, 2).detach()
-        )
-
-    if cache_params is not None:
-        cache_params.update_recurrent_state(last_recurrent_state, self.layer_idx)
-
-    core_attn_out = core_attn_out.reshape(-1, self.head_v_dim)
-    z = z.reshape(-1, self.head_v_dim)
-    core_attn_out = self.norm(core_attn_out, z)
-    core_attn_out = core_attn_out.reshape(batch_size, seq_len, -1)
-
-    output = self.out_proj(core_attn_out)
-    return output
-
-
-def Qwen3_5ForCausalLM_forward(
-    self,
-    input_ids: torch.LongTensor = None,
-    attention_mask: Optional[torch.Tensor] = None,
-    position_ids: Optional[torch.LongTensor] = None,
-    past_key_values: Optional[Union[Cache, List[torch.FloatTensor]]] = None,
-    inputs_embeds: Optional[torch.FloatTensor] = None,
-    labels: Optional[torch.LongTensor] = None,
-    use_cache: Optional[bool] = None,
-    logits_to_keep: Union[int, torch.Tensor] = 0,
-    **kwargs,
-) -> Union[Tuple, CausalLMOutputWithPast]:
-    
-    # sample-level statistics
-    if past_key_values.get_seq_length() == 0:
-        if self.config.compression_content == "think":
-            self.after_think = False
-
-    if not hasattr(self, "length"):
-        self.length = input_ids.shape[1]
-    else:
-        self.length += input_ids.shape[1]
-
-    outputs: BaseModelOutputWithPast = self.model(
-        input_ids=input_ids,
-        attention_mask=attention_mask,
-        position_ids=position_ids,
-        past_key_values=past_key_values,
-        inputs_embeds=inputs_embeds,
-        use_cache=use_cache,
-        **kwargs,
-    )
-
-    hidden_states = outputs.last_hidden_state
-    slice_indices = (
-        slice(-logits_to_keep, None)
-        if isinstance(logits_to_keep, int)
-        else logits_to_keep
-    )
-    logits = self.lm_head(hidden_states[:, slice_indices, :])
-
-    # =============== Step-level Compression logic start ===============
-    # assume non-batch input, shape: [1, logits_to_keep, vocab_size]
-    predicted_token_ids = logits[:, -1, :].argmax(dim=-1)
-
-    if self.config.compression_content == "think" and self.after_think == False:
-        self.after_think = (
-            predicted_token_ids[0].cpu().item() in self.after_think_token_ids
-        )
-
-    if self.config.divide_method == "newline":
-        is_newline = predicted_token_ids[0].cpu().item() in self.newline_token_ids
-    elif self.config.divide_method == "step_length":
-        is_newline = self.length % self.config.divide_length == 0
-    else:
-        raise ValueError(f"Invalid divide_method: {self.config.divide_method}")
-
-    if self.config.compression_content == "think" and self.after_think == True:
-        is_newline = False
-
-    # Set compression flag for all layers at once
-    for layer in self.model.layers:
-        if layer.layer_type == "full_attention":
-            layer.self_attn.config.compression = is_newline
-    # =============== Step-level Compression logic end =================
-
-    loss = None
-    if labels is not None:
-        loss = self.loss_function(
-            logits=logits,
-            labels=labels,
-            vocab_size=self.config.vocab_size,
-            **kwargs,
-        )
-
-    return CausalLMOutputWithPast(
-        loss=loss,
-        logits=logits,
-        past_key_values=outputs.past_key_values,
-        hidden_states=outputs.hidden_states,
-        attentions=outputs.attentions,
-    )
 
 def Qwen3_5ForConditionalGeneration_forward(
     self,

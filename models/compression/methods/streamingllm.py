@@ -1,5 +1,4 @@
 import torch
-from .gate_overlap import init_gate_overlap_recorder, record_gate_topk_overlap
 
 
 class StreamingLLM:
@@ -7,7 +6,6 @@ class StreamingLLM:
         self,
         budget=128,
         first_tokens=4,
-        record_gate_overlap=False,
         layer_idx=None,
         model_config=None,
         model_type=None,
@@ -21,16 +19,12 @@ class StreamingLLM:
         self.model_config = model_config
         self.model_type = model_type
         self.mode = mode
-        init_gate_overlap_recorder(self, "streamingllm", record_gate_overlap)
 
     def update_kv(
         self,
         key_states,
         query_states,
         value_states,
-        gate_states=None,
-        linear_state_scores=None,
-        is_prefill=False,
     ):
         kv_cache_len = key_states.shape[-2]
 
@@ -52,23 +46,6 @@ class StreamingLLM:
                 key_states.shape[0],
                 key_states.shape[1],
                 -1,
-            )
-            method_scores = torch.zeros(
-                key_states.shape[0],
-                key_states.shape[1],
-                kv_cache_len,
-                dtype=key_states.dtype,
-                device=key_states.device,
-            )
-            method_scores.scatter_(dim=-1, index=indices, value=1.0)
-            record_gate_topk_overlap(
-                self,
-                method_indices=indices,
-                gate_states=gate_states,
-                kv_cache_len=kv_cache_len,
-                is_prefill=is_prefill,
-                method_scores=method_scores,
-                linear_state_scores=linear_state_scores,
             )
             # only select the first self.first_tokens tokens and the last local_window_size tokens
             key_states = torch.cat(

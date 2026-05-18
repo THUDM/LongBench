@@ -6,7 +6,6 @@ MODEL_PATH="Qwen/Qwen3.5-9B"  # e.g., meta-llama/Llama-3.1-8B-Instruct
 ATTN="flash_attention_2"
 
 EXPERIMENTS=(
-    "snapkv 1024 Qwen3.5"
 )
 
 # Each entry is one visible GPU group for a single process.
@@ -44,7 +43,6 @@ for exp in "${EXPERIMENTS[@]}"; do
     gpu_group=${CUDA_DEVICE_GROUPS[$((IDX % NUM_GPU_GROUPS))]}
 
     compression_args=()
-    linear_state_args=()
     version_args=(--model_version "Qwen3.5_FullKV_${capacity}")
     if [[ "${method}" != "FullKV" ]]; then
         compression_args=(
@@ -54,16 +52,6 @@ for exp in "${EXPERIMENTS[@]}"; do
         )
         version_args=(--model_version "Qwen3.5")
     fi
-    if [[ "${method}" == "gatekv" ]]; then
-        linear_state_args=(
-            --use_linear_state
-            --linear_state_weight 1
-            --linear_state_norm rank
-            --linear_state_layer_range 1
-            --linear_state_score_type "write_norm"
-        )
-    fi
-
     CUDA_VISIBLE_DEVICES="${gpu_group}" python -u run_niah.py \
         --s_len 5000 --e_len 50001 \
         --model_provider "${provider}" \
@@ -71,8 +59,7 @@ for exp in "${EXPERIMENTS[@]}"; do
         --attn_implementation "${ATTN}" \
         --step 5000 \
         "${version_args[@]}" \
-        "${compression_args[@]}" \
-        "${linear_state_args[@]}" &
+        "${compression_args[@]}" &
     PIDS+=("$!")
 
     IDX=$((IDX + 1))

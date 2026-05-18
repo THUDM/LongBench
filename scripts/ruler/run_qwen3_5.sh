@@ -46,7 +46,6 @@ for exp in "${EXPERIMENTS[@]}"; do
     gpu_group=${CUDA_DEVICE_GROUPS[$((IDX % NUM_GPU_GROUPS))]}
 
     compression_args=()
-    linear_state_args=()
     if [[ "${method}" != "FullKV" ]]; then
         compression_args=(
             --compression
@@ -54,23 +53,12 @@ for exp in "${EXPERIMENTS[@]}"; do
             --compression_budget "${capacity}"
         )
     fi
-    if [[ "${method}" == "gatekv" ]]; then
-        linear_state_args=(
-            --use_linear_state
-            --linear_state_weight 1
-            --linear_state_norm rank
-            --linear_state_layer_range 1
-            --linear_state_score_type "write_norm"
-        )
-    fi
-
     CUDA_VISIBLE_DEVICES="${gpu_group}" python3 -u run_ruler.py \
         --model_path "${MODEL_PATH}" \
         --attn_implementation "${ATTN}" \
         --save_dir "${SAVE_DIR}" \
         --model_maxlen "${MODEL_MAXLEN}" \
-        "${compression_args[@]}" \
-        "${linear_state_args[@]}" &
+        "${compression_args[@]}" &
     PIDS+=("$!")
 
     IDX=$((IDX + 1))
