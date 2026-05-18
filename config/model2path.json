@@ -10,5 +10,6 @@
     "Mistral-Large-Instruct-2411": "mistralai/Mistral-Large-Instruct-2411",
     "c4ai-command-r-plus-08-2024": "CohereForAI/c4ai-command-r-plus-08-2024",
     "glm-4-plus": "THUDM/glm-4-9b-chat",
-    "qwen3.5-9b": "Qwen/Qwen3.5-9B"
+    "qwen3.5-9b": "Qwen/Qwen3.5-9B",
+    "qwen3-8b": "Qwen/Qwen3-8B"
 }
